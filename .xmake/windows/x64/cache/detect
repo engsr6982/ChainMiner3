@@ -1,0 +1,18 @@
+{
+    find_program_clang_arch_x64_plat_windows_checktoolcxx = {
+        ["clang++"] = false,
+        clang = false
+    },
+    find_program_cuda_arch_x64_plat_windows_checktoolcxx = {
+        ["nvc++"] = false
+    },
+    find_program_zig_arch_x64_plat_windows_checktoolcxx = {
+        ["zig c++"] = false
+    },
+    find_program_msvc_arch_x64_plat_windows_checktoolcxx = {
+        ["cl.exe"] = false
+    },
+    ["detect.sdks.find_cuda"] = {
+        cuda = false
+    }
+}

@@ -3,20 +3,20 @@
     "tooth": "https://github.com/HJH201314/ChainMiner",
     "version": "0.3.3",
     "info": {
-        "name": "ChainMiner",
+        "name": "ChainMiner3",
         "description": "A plugin helps players to gather blocks quicker.",
         "author": "HJH201314",
-        "source": "https://github.com/HJH201314/ChainMiner",
         "tags": [
-            "mine"
+            "plugin",
+            "levilamina",
+            "chainminer"
         ]
     },
-    "commands": {},
     "files": {
         "place": [
             {
-                "src": "ChainMiner/*",
-                "dest": "plugins/ChainMiner"
+                "src": "ChainMiner3/*",
+                "dest": "plugins/ChainMiner3"
             }
         ]
     }
