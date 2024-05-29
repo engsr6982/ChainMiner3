@@ -85,7 +85,9 @@ void registerCommand() {
         case OptionalList_1::test: {
             // 限制为管理员权限
             if (ori.getPermissionsLevel() >= CommandPermissionLevel::Admin) {
-                outp.success(fmt::format("{} {}", countTaskList() /*, countPos2Id()*/, countChainingBlocks()));
+                outp.success(
+                    fmt::format("{} {}", plugin::countTaskList() /*, countPos2Id()*/, plugin::countChainingBlocks())
+                );
             }
             break;
         }
@@ -214,7 +216,7 @@ void registerCommand() {
             if (ori.getOriginType() == CommandOriginType::Player) {
                 auto      pl   = static_cast<Player*>(ori.getEntity());
                 ItemStack item = pl->getSelectedItem();
-                toolDamage(item, param.count);
+                plugin::toolDamage(item, param.count);
                 pl->setSelectedItem(item);
                 pl->refreshInventory();
             }
