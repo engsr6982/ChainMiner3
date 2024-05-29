@@ -74,7 +74,7 @@ void registerCommand() {
     );
 
     // 重载1
-    cmd.overload<OP1>().execute([](CommandOrigin const& ori, CommandOutput& outp, OP1 const& param) {
+    cmd.overload<OP1>().required("op1").execute([](CommandOrigin const& ori, CommandOutput& outp, OP1 const& param) {
         switch (param.op1) {
         case OptionalList_1::reload: {
             // 限制为管理员权限
@@ -121,7 +121,9 @@ void registerCommand() {
     });
 
     // 重载2：玩家可选
-    cmd.overload<OP2>().optional("player").execute([](CommandOrigin const& ori, CommandOutput& outp, OP2 const& param) {
+    cmd.overload<OP2>().required("op2").optional("player").execute([](CommandOrigin const& ori,
+                                                                      CommandOutput&       outp,
+                                                                      OP2 const&           param) {
         switch (param.op2) {
         case OptionalList_2::on: {
             if (ori.getOriginType() == CommandOriginType::Player) {
@@ -169,48 +171,50 @@ void registerCommand() {
     });
 
     // 重载3：玩家必选
-    cmd.overload<OP3>().required("player").execute([](CommandOrigin const& ori, CommandOutput& outp, OP3 const& param) {
-        switch (param.op3) {
-        case OptionalList_3::op: {
-            auto& op_list = config::op_list;
-            if (ori.getOriginType() == CommandOriginType::DedicatedServer) {
-                auto pls = param.player.results(ori).data;
-                for (auto el : *pls)
-                    if (!utils::v_contains(op_list, el->getXuid())) {
-                        playersetting::playerSetting.setOP(el->getXuid());
-                        outp.success("成功添加<" + el->getName() + ">为连锁采集管理.");
-                    } else {
-                        outp.success("<" + el->getName() + ">已经是连锁采集管理.");
-                    }
-            } else {
-                outp.error("Permission Denied.");
+    cmd.overload<OP3>().required("op3").required("player").execute(
+        [](CommandOrigin const& ori, CommandOutput& outp, OP3 const& param) {
+            switch (param.op3) {
+            case OptionalList_3::op: {
+                auto& op_list = config::op_list;
+                if (ori.getOriginType() == CommandOriginType::DedicatedServer) {
+                    auto pls = param.player.results(ori).data;
+                    for (auto el : *pls)
+                        if (!utils::v_contains(op_list, el->getXuid())) {
+                            playersetting::playerSetting.setOP(el->getXuid());
+                            outp.success("成功添加<" + el->getName() + ">为连锁采集管理.");
+                        } else {
+                            outp.success("<" + el->getName() + ">已经是连锁采集管理.");
+                        }
+                } else {
+                    outp.error("Permission Denied.");
+                }
+                break;
             }
-            break;
-        }
-        case OptionalList_3::deop: {
-            auto& op_list = config::op_list;
-            if (ori.getOriginType() == CommandOriginType::DedicatedServer) {
-                auto pls = param.player.results(ori).data;
-                for (auto el : *pls)
-                    if (utils::v_contains(op_list, el->getXuid())) {
-                        playersetting::playerSetting.delOP(el->getXuid());
-                        outp.success("成功移除<" + el->getName() + ">的连锁采集管理.");
-                    } else {
-                        outp.success("<" + el->getName() + ">不是连锁采集管理.");
-                    }
-            } else {
-                outp.error("Permission Denied.");
+            case OptionalList_3::deop: {
+                auto& op_list = config::op_list;
+                if (ori.getOriginType() == CommandOriginType::DedicatedServer) {
+                    auto pls = param.player.results(ori).data;
+                    for (auto el : *pls)
+                        if (utils::v_contains(op_list, el->getXuid())) {
+                            playersetting::playerSetting.delOP(el->getXuid());
+                            outp.success("成功移除<" + el->getName() + ">的连锁采集管理.");
+                        } else {
+                            outp.success("<" + el->getName() + ">不是连锁采集管理.");
+                        }
+                } else {
+                    outp.error("Permission Denied.");
+                }
+                break;
             }
-            break;
+            case OptionalList_3::ban: {
+                break; // 原作者未实现
+            }
+            case OptionalList_3::forgiv: {
+                break; // 原作者未实现
+            }
+            }
         }
-        case OptionalList_3::ban: {
-            break; // 原作者未实现
-        }
-        case OptionalList_3::forgiv: {
-            break; // 原作者未实现
-        }
-        }
-    });
+    );
 
     // 重载4：数字必选
     cmd.overload<ParamDamage>().required("count").execute(

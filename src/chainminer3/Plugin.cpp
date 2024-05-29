@@ -28,8 +28,8 @@
 
 
 // 全局变量声明
-ll::event::ListenerPtr                mPlayerDestroyBlockEventListener;
-ll ::schedule::GameTickAsyncScheduler mNextTickScheduler; // 注册到游戏主循环的下一tick调度器
+ll::event::ListenerPtr           mPlayerDestroyBlockEventListener;
+ll ::schedule::GameTickScheduler mNextTickScheduler; // 注册到游戏主循环的下一tick调度器
 using ll::chrono_literals::operator""_tick;
 
 
