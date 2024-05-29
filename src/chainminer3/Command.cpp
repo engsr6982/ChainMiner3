@@ -3,6 +3,8 @@
 #include "PlayerSetting.h"
 #include "Plugin.h"
 #include "Utils.hpp"
+#include "ll/api/form/CustomForm.h"
+#include "ll/api/form/SimpleForm.h"
 #include "mc/nbt/CompoundTag.h"
 #include "mc/world/actor/player/Player.h"
 #include "mc/world/item/registry/ItemStack.h"
@@ -40,8 +42,6 @@
 namespace chainminer3::command {
 
 
-extern nlohmann::json config_j;
-
 // 命令 Optionl 枚举
 enum OptionalList_1 { reload = 0, test = -1, menu = 1, block = 2, edit = 3, help = 4 };
 enum OptionalList_2 { on = 5, off = 6 };
@@ -68,8 +68,10 @@ struct ParamDamage {
 
 
 void registerCommand() {
-    auto& cmd =
-        ll::command::CommandRegistrar::getInstance().getOrCreateCommand(config_j["command"], "ChainMiner连锁采集");
+    auto& cmd = ll::command::CommandRegistrar::getInstance().getOrCreateCommand(
+        config::config_j["command"],
+        "ChainMiner连锁采集"
+    );
 
     // 重载1
     cmd.overload<OP1>().execute([](CommandOrigin const& ori, CommandOutput& outp, OP1 const& param) {
@@ -130,12 +132,12 @@ void registerCommand() {
                     for (auto el : *targets) {
                         if (ori.getPermissionsLevel() >= CommandPermissionLevel::Admin || pl.getXuid() == el->getXuid())
                             playersetting::playerSetting.turnOn(el->getXuid());
-                        outp.success(std::string(config_j["msg"]["switch.on"]));
+                        outp.success(std::string(config::config_j["msg"]["switch.on"]));
                     }
                 } else {
                     // 玩家自己执行命令
                     playersetting::playerSetting.turnOn(pl.getXuid());
-                    pl.sendMessage(config_j["msg"]["switch.on"]);
+                    pl.sendMessage(config::config_j["msg"]["switch.on"]);
                 }
             } else {
                 outp.error("Do not use this in console.");
@@ -151,12 +153,12 @@ void registerCommand() {
                     for (auto el : *targets) {
                         if (ori.getPermissionsLevel() >= CommandPermissionLevel::Admin || pl.getXuid() == el->getXuid())
                             playersetting::playerSetting.turnOff(el->getXuid());
-                        outp.success(std::string(config_j["msg"]["switch.off"]));
+                        outp.success(std::string(config::config_j["msg"]["switch.off"]));
                     }
                 } else {
                     // 玩家自己执行命令
                     playersetting::playerSetting.turnOff(pl.getXuid());
-                    pl.sendMessage(config_j["msg"]["switch.off"]);
+                    pl.sendMessage(config::config_j["msg"]["switch.off"]);
                 }
             } else {
                 outp.error("Do not use this in console.");
@@ -225,8 +227,6 @@ void registerCommand() {
 }
 
 
-#include "ll/api/form/CustomForm.h"
-#include "ll/api/form/SimpleForm.h"
 using namespace ll::form;
 // C:\Program
 // Files\WindowsApps\Microsoft.MinecraftUWP_1.18.3004.0_x64__8wekyb3d8bbwe\data\resource_packs\vanilla\textures\blocks
@@ -269,7 +269,7 @@ void sendBlockSwitchMenu(Player& pl, int page) {
     // 第一页的page=0
     auto& block_list = config::block_list; // 可连锁方块列表
 
-    int count_per_page = config_j["menu.count_per_page"];
+    int count_per_page = config::config_j["menu.count_per_page"];
     int max_page       = (block_list.size() - 1) / count_per_page;
     page               = (page < max_page ? page : max_page); // 取更小的页码->避免空页
     if (count_per_page != -1 && page == -1) page = 0;         // 当每页数量不为-1时->访问第一页
@@ -290,12 +290,12 @@ void sendBlockSwitchMenu(Player& pl, int page) {
             [nsid, page](Player& p_pl) {
                 if (playersetting::playerSetting.getSwitch(p_pl.getXuid(), nsid)) {
                     playersetting::playerSetting.turnOff(p_pl.getXuid(), nsid);
-                    string msg = config_j["msg"]["switch.block.off"];
+                    string msg = config::config_j["msg"]["switch.block.off"];
                     msg        = utils::s_replace(msg, "%Block%", nsid);
                     p_pl.sendMessage(msg);
                 } else {
                     playersetting::playerSetting.turnOn(p_pl.getXuid(), nsid);
-                    string msg = config_j["msg"]["switch.block.on"];
+                    string msg = config::config_j["msg"]["switch.block.on"];
                     msg        = utils::s_replace(msg, "%Block%", nsid);
                     p_pl.sendMessage(msg);
                 }

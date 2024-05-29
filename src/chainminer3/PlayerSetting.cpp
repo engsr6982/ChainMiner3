@@ -45,16 +45,14 @@ void PlayerSetting::create_empty_file() {
 }
 
 void PlayerSetting::delOP(const xuid_t& xuid) {
-    extern json config_j;
     utils::v_remove(config::op_list, xuid);
-    config_j["op"] = config::op_list;
+    config::config_j["op"] = config::op_list;
     config::saveConfig();
 }
 
 void PlayerSetting::setOP(const xuid_t& xuid) {
-    extern json config_j;
     config::op_list.push_back(xuid);
-    config_j["op"] = config::op_list;
+    config::config_j["op"] = config::op_list;
     config::saveConfig();
 }
 
@@ -64,24 +62,22 @@ void PlayerSetting::setSwitch(const xuid_t& xuid, const string& nsid, const bool
 }
 
 bool PlayerSetting::getSwitch(const xuid_t& xuid) {
-    extern json config_j;
     if (player_j.contains(xuid)) {
         if (player_j[xuid].contains("switch")) {
             return bool(player_j[xuid]["switch"]);
         } else {
-            return bool(config_j["switch"]["default"]);
+            return bool(config::config_j["switch"]["default"]);
         }
     } else {
-        return bool(config_j["switch"]["default"]);
+        return bool(config::config_j["switch"]["default"]);
     }
 }
 
 bool PlayerSetting::getSwitch(const xuid_t& xuid, const string& nsid) { // 获取指定项目开关
-    extern json config_j;
     if (player_j.contains(xuid) && player_j[xuid].contains(nsid)) {
         return player_j[xuid][nsid];
-    } else if (config_j["switch"].contains(nsid)) {
-        return bool(config_j["switch"][nsid]);
+    } else if (config::config_j["switch"].contains(nsid)) {
+        return bool(config::config_j["switch"][nsid]);
     } else {
         return true;
     }
