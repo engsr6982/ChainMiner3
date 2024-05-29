@@ -1,15 +1,12 @@
 ﻿#include "Command.h"
-
 #include "Config.h"
+#include "PlayerSetting.h"
 #include "Plugin.h"
 #include "Utils.hpp"
-#include "pch.h"
-#include <fmt/core.h>
-
-#include "Plugin.h"
 #include "mc/nbt/CompoundTag.h"
 #include "mc/world/actor/player/Player.h"
 #include "mc/world/item/registry/ItemStack.h"
+#include <fmt/core.h>
 #include <initializer_list>
 #include <ll/api/Logger.h>
 #include <ll/api/command/Command.h>
@@ -75,12 +72,12 @@ void registerCommand() {
         ll::command::CommandRegistrar::getInstance().getOrCreateCommand(config_j["command"], "ChainMiner连锁采集");
 
     // 重载1
-    cmd.overload<OP1>().execute([this](CommandOrigin const& ori, CommandOutput& outp, OP1 const& param) {
+    cmd.overload<OP1>().execute([](CommandOrigin const& ori, CommandOutput& outp, OP1 const& param) {
         switch (param.op1) {
         case OptionalList_1::reload: {
             // 限制为管理员权限
             if (ori.getPermissionsLevel() >= CommandPermissionLevel::Admin) {
-                readConfig();
+                config::readConfig();
                 outp.success("§e重载成功!");
             }
             break;
@@ -130,12 +127,12 @@ void registerCommand() {
                     // 玩家选择器
                     for (auto el : *targets) {
                         if (ori.getPermissionsLevel() >= CommandPermissionLevel::Admin || pl.getXuid() == el->getXuid())
-                            playerSetting.turnOn(el->getXuid());
+                            playersetting::playerSetting.turnOn(el->getXuid());
                         outp.success(std::string(config_j["msg"]["switch.on"]));
                     }
                 } else {
                     // 玩家自己执行命令
-                    playerSetting.turnOn(pl.getXuid());
+                    playersetting::playerSetting.turnOn(pl.getXuid());
                     pl.sendMessage(config_j["msg"]["switch.on"]);
                 }
             } else {
@@ -151,12 +148,12 @@ void registerCommand() {
                     // 玩家选择器
                     for (auto el : *targets) {
                         if (ori.getPermissionsLevel() >= CommandPermissionLevel::Admin || pl.getXuid() == el->getXuid())
-                            playerSetting.turnOff(el->getXuid());
+                            playersetting::playerSetting.turnOff(el->getXuid());
                         outp.success(std::string(config_j["msg"]["switch.off"]));
                     }
                 } else {
                     // 玩家自己执行命令
-                    playerSetting.turnOff(pl.getXuid());
+                    playersetting::playerSetting.turnOff(pl.getXuid());
                     pl.sendMessage(config_j["msg"]["switch.off"]);
                 }
             } else {
@@ -171,12 +168,12 @@ void registerCommand() {
     cmd.overload<OP3>().required("player").execute([](CommandOrigin const& ori, CommandOutput& outp, OP3 const& param) {
         switch (param.op3) {
         case OptionalList_3::op: {
-            extern std::vector<std::string> op_list;
+            auto& op_list = config::op_list;
             if (ori.getOriginType() == CommandOriginType::DedicatedServer) {
                 auto pls = param.player.results(ori).data;
                 for (auto el : *pls)
-                    if (!v_contains(op_list, el->getXuid())) {
-                        playerSetting.setOP(el->getXuid());
+                    if (!utils::v_contains(op_list, el->getXuid())) {
+                        playersetting::playerSetting.setOP(el->getXuid());
                         outp.success("成功添加<" + el->getName() + ">为连锁采集管理.");
                     } else {
                         outp.success("<" + el->getName() + ">已经是连锁采集管理.");
@@ -187,12 +184,12 @@ void registerCommand() {
             break;
         }
         case OptionalList_3::deop: {
-            extern std::vector<std::string> op_list;
+            auto& op_list = config::op_list;
             if (ori.getOriginType() == CommandOriginType::DedicatedServer) {
                 auto pls = param.player.results(ori).data;
                 for (auto el : *pls)
-                    if (v_contains(op_list, el->getXuid())) {
-                        playerSetting.delOP(el->getXuid());
+                    if (utils::v_contains(op_list, el->getXuid())) {
+                        playersetting::playerSetting.delOP(el->getXuid());
                         outp.success("成功移除<" + el->getName() + ">的连锁采集管理.");
                     } else {
                         outp.success("<" + el->getName() + ">不是连锁采集管理.");
@@ -243,17 +240,21 @@ void sendPlayerMenu(Player& pl) {
 void sendBasicSettingMenu(Player& pl) {
     CustomForm form("连锁采集 - 基础设置");
     form.appendLabel("Tip1: 修改后点击提交即可保存");
-    form.appendToggle("chain", "连锁采集开关", playerSetting.getSwitch(pl.getXuid()));
-    form.appendToggle("sneak", "仅在下蹲时连锁", playerSetting.getSwitch(pl.getXuid(), "chain_while_sneaking_only"));
+    form.appendToggle("chain", "连锁采集开关", playersetting::playerSetting.getSwitch(pl.getXuid()));
+    form.appendToggle(
+        "sneak",
+        "仅在下蹲时连锁",
+        playersetting::playerSetting.getSwitch(pl.getXuid(), "chain_while_sneaking_only")
+    );
     form.sendTo(pl, [](Player& p_pl, CustomFormResult const& elems, FormCancelReason) {
         // 为空代表表单被关闭
         if (elems) {
             bool chain = std::get<uint64>(elems->at("chain"));
             bool sneak = std::get<uint64>(elems->at("sneak"));
-            if (playerSetting.getSwitch(p_pl.getXuid()) != chain) {
-                playerSetting.setSwitch(p_pl.getXuid(), "switch", chain);
-            } else if (playerSetting.getSwitch(p_pl.getXuid(), "chain_while_sneaking_only") != sneak) {
-                playerSetting.setSwitch(p_pl.getXuid(), "chain_while_sneaking_only", sneak);
+            if (playersetting::playerSetting.getSwitch(p_pl.getXuid()) != chain) {
+                playersetting::playerSetting.setSwitch(p_pl.getXuid(), "switch", chain);
+            } else if (playersetting::playerSetting.getSwitch(p_pl.getXuid(), "chain_while_sneaking_only") != sneak) {
+                playersetting::playerSetting.setSwitch(p_pl.getXuid(), "chain_while_sneaking_only", sneak);
             }
             p_pl.sendMessage("§c[§6连§e锁§a采§b集§c] §a设置成功");
         }
@@ -264,7 +265,7 @@ void sendBasicSettingMenu(Player& pl) {
 using string = std::string;
 void sendBlockSwitchMenu(Player& pl, int page) {
     // 第一页的page=0
-    extern std::unordered_map<string, BlockInfo> block_list; // 可连锁方块列表
+    auto& block_list = config::block_list; // 可连锁方块列表
 
     int count_per_page = config_j["menu.count_per_page"];
     int max_page       = (block_list.size() - 1) / count_per_page;
@@ -279,21 +280,21 @@ void sendBlockSwitchMenu(Player& pl, int page) {
         // logger.debug("{} {} {}", page, count_per_page, it->first);
         string name  = it->first.substr(10);
         string nsid  = "minecraft:" + name;
-        bool   onoff = playerSetting.getSwitch(pl.getXuid(), nsid);
+        bool   onoff = playersetting::playerSetting.getSwitch(pl.getXuid(), nsid);
         form.appendButton(
             string((it->second.name == "" ? name : it->second.name) + "§f(" + (onoff ? "§a开启" : "§c关闭") + "§f)"),
             (it->second.texture == "" ? string("textures/blocks/" + name) : it->second.texture),
             "path",
-            [](Player& p_pl) {
-                if (playerSetting.getSwitch(p_pl.getXuid(), nsid)) {
-                    playerSetting.turnOff(p_pl.getXuid(), nsid);
+            [nsid, page](Player& p_pl) {
+                if (playersetting::playerSetting.getSwitch(p_pl.getXuid(), nsid)) {
+                    playersetting::playerSetting.turnOff(p_pl.getXuid(), nsid);
                     string msg = config_j["msg"]["switch.block.off"];
-                    msg        = s_replace(msg, "%Block%", nsid);
+                    msg        = utils::s_replace(msg, "%Block%", nsid);
                     p_pl.sendMessage(msg);
                 } else {
-                    playerSetting.turnOn(p_pl.getXuid(), nsid);
+                    playersetting::playerSetting.turnOn(p_pl.getXuid(), nsid);
                     string msg = config_j["msg"]["switch.block.on"];
-                    msg        = s_replace(msg, "%Block%", nsid);
+                    msg        = utils::s_replace(msg, "%Block%", nsid);
                     p_pl.sendMessage(msg);
                 }
                 sendBlockSwitchMenu(p_pl, page); // 一直重复发送菜单
@@ -301,11 +302,11 @@ void sendBlockSwitchMenu(Player& pl, int page) {
         );
     }
     if (page >= 1)
-        form.appendButton("上一页", [](Player& p_pl) {
+        form.appendButton("上一页", [page](Player& p_pl) {
             sendBlockSwitchMenu(p_pl, page - 1); // 发送上一页的菜单
         });
     if (page >= 0 && page < max_page)
-        form.appendButton("下一页", [](Player& p_pl) { sendBlockSwitchMenu(p_pl, page + 1); });
+        form.appendButton("下一页", [page](Player& p_pl) { sendBlockSwitchMenu(p_pl, page + 1); });
     form.appendButton("关闭", [](Player&) {});
     form.sendTo(pl);
 }

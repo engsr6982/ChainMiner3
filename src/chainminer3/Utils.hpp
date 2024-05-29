@@ -1,5 +1,9 @@
 #pragma once
-#include "pch.h"
+#include <string>
+#include <vector>
+
+namespace chainminer3::utils {
+
 
 inline std::string
 s_replace(std::string strSrc, const std::string& oldStr, const std::string& newStr, size_t count = -1) {
@@ -36,3 +40,6 @@ inline int v_remove(std::vector<T>& v, const T f) {
     }
     return false;
 }
+
+
+} // namespace chainminer3::utils

@@ -6,21 +6,14 @@
 #include "mc/world/level/Level.h"
 #include "mc/world/scores/ScoreInfo.h"
 #include "mc/world/scores/Scoreboard.h"
-#include "pch.h"
 #include <mc/world/scores/Objective.h>
 #include <mc/world/scores/Scoreboard.h>
 #include <mc/world/scores/ScoreboardId.h>
 #include <string>
 
 
-// LLMoney不存在返回false,其余返回true
-// bool Economic::init() {
-//     auto pl = ll::getPlugin("LLMoney");
-//     if (pl) {
-//         llmoney.init();
-//     }
-//     return !!pl;
-// }
+namespace chainminer3::economic {
+
 
 money_t Economic::getMoney(Player* pl) {
     if (Economic::mode == 1) {
@@ -105,3 +98,7 @@ bool Economic::clearMoneyHist(int time) {
     LLMoney_ClearHist(time);
     return true;
 }
+
+Economic economic; // init economic
+
+} // namespace chainminer3::economic

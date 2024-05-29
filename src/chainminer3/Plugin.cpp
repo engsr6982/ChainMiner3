@@ -1,46 +1,40 @@
-﻿#include "mc/world/level/block/actor/BlockActor.h"
-#include "pch.h"
-
-// #include <llapi/EventAPI.h>
-// #include <llapi/mc/Actor.hpp>
-// #include <llapi/mc/Block.hpp>
-// #include <llapi/mc/BlockInstance.hpp>
-// #include <llapi/mc/HashedString.hpp>
-// #include <llapi/mc/ItemInstance.hpp>
-// #include <llapi/mc/ItemStack.hpp>
-// #include <llapi/mc/Level.hpp>
-// #include <llapi/mc/ListTag.hpp>
-// #include <llapi/mc/Material.hpp>
-// #include <llapi/mc/Player.hpp>
-
-
+﻿#include "Plugin.h"
 #include "Config.h"
 #include "Economic.h"
+#include "PlayerSetting.h"
 #include "Plugin.h"
 #include "Utils.hpp"
-
-
+#include "ll/api/chrono/GameChrono.h"
+#include "ll/api/event/Event.h"
+#include "ll/api/event/EventBus.h"
+#include "ll/api/event/ListenerBase.h"
+#include "ll/api/event/player/PlayerDestroyBlockEvent.h"
+#include "ll/api/schedule/Scheduler.h"
+#include "ll/api/schedule/Task.h"
+#include "ll/api/service/Bedrock.h"
+#include "mc/nbt/CompoundTag.h"
+#include "mc/world/level/BlockSource.h"
+#include "mc/world/level/Level.h"
+#include "mc/world/level/block/ActorBlock.h"
+#include "mc/world/level/block/Block.h"
+#include "mc/world/level/block/actor/BlockActor.h"
+#include "mc/world/level/dimension/Dimension.h"
+#include "mc/world/level/material/Material.h"
 #include "plugin/MyPlugin.h"
-
 #include <queue>
 #include <random>
 #include <unordered_map>
 #include <utility>
 
 
-using std::pair;
-using std::queue;
-using std::to_string;
-using std::unique_ptr;
-using std::unordered_map;
-using std::unordered_set;
+// 全局变量声明
+ll::event::ListenerPtr                mPlayerDestroyBlockEventListener;
+ll ::schedule::GameTickAsyncScheduler mNextTickScheduler; // 注册到游戏主循环的下一tick调度器
+using ll::chrono_literals::operator""_tick;
 
-#define logger my_plugin::MyPlugin::getInstance().getSelf().getLogger()
 
-std::random_device                 rd;        // 使用硬件熵源的非确定随机数生成器(类)
-std::default_random_engine         re(rd());  // 设置随机数分布类型
-std::uniform_int_distribution<int> ud(0, 99); // 设置随机数返回
-// std::bernoulli_distribution rand_dist(0.5);//50%生成true
+namespace chainminer3::plugin {
+
 
 typedef struct minerinfo {
     string     name;    // 方块名称
@@ -53,145 +47,151 @@ typedef struct minerinfo {
     Player*    pl{};
 } MinerInfo;
 
+
+std::random_device                 rd;        // 使用硬件熵源的非确定随机数生成器(类)
+std::default_random_engine         re(rd());  // 设置随机数分布类型
+std::uniform_int_distribution<int> ud(0, 99); // 设置随机数返回
+// std::bernoulli_distribution rand_dist(0.5);//50%生成true
+
 // unordered_map<string, int> pos2id; // pos, task_id
-unordered_map<int, MinerInfo> task_list;       // id,cnt
-unordered_set<string>         chaining_blocks; // 避免在call事件的时候进入死循环
+std::unordered_map<int, MinerInfo> task_list;       // id,cnt
+std::unordered_set<std::string>    chaining_blocks; // 避免在call事件的时候进入死循环
 
-extern unordered_map<string, BlockInfo> block_list; // 方块列表
-extern nlohmann::json                   config_j;
-
-// void PluginInit() {
-//     logger.info("初始化... v{}.{}.{}.{}", PLUGIN_VERSION_MAJOR, PLUGIN_VERSION_MINOR, PLUGIN_VERSION_REVISION,
-//                 PLUGIN_VERSION_BUILD);
-//     logger.info("Compiled at {}, {}", __DATE__, __TIME__);
-//     initConfig();
-//     initEventOnPlayerDestroy();
-//     registerCommand();
-//     logger.info(
-//         fmt::format(fg(fmt::color::light_steel_blue) | fmt::emphasis::bold, "催更及反馈群：") + fmt::format(
-//             fg(fmt::color::gold) | fmt::emphasis::bold, "322586206"));
-// }
-
-void initEventOnPlayerDestroy() {
-    Event::PlayerDestroyBlockEvent::subscribe_ref([](Event::PlayerDestroyBlockEvent& e) {
-        // To prevent recursion while detecting block destroyability
-        if (chaining_blocks.contains(getBlockDimAndPos(e.mBlockInstance))) {
-            return true;
-        }
-
-        // Handle event in the next tick for compatibility
-        Schedule::nextTick([=]() {
-            BlockInstance  bli = e.mBlockInstance; // 挖掘前的方块的实例
-            const BlockPos blp = bli.getPosition();
-
-            // 获取同位置的方块新实例, 检测方块是否已掉落, 未掉落(被领地拦截等)则不进行连锁
-            if (!Level::getBlock(blp, bli.getDimensionId())->isAir()) return true;
-
-            // 仅在生存模式下可连锁
-            if (e.mPlayer->getPlayerGameType() != GameType::Survival) return true;
-            // 仅当玩家连锁开关打开时可连锁 (默认开启)
-            if (!playerSetting.getSwitch(e.mPlayer->getXuid())) return true;
-            // 开启潜行连锁 (默认关闭) 后，仅当玩家潜行时可连锁
-            if (playerSetting.getSwitch(e.mPlayer->getXuid(), "chain_while_sneaking_only") && !e.mPlayer->isSneaking())
-                return true;
-
-            const Block* bl = bli.getBlock();
-            const string bn = bl->getName().getString();
-            // logger.debug("{} {} {} {} {},{},{}", bl->getName().getString(), bl->getId(), bl->getDescriptionId(),
-            // bl->getVariant(), blp.x, blp.y, blp.z); logger.debug("{} BREAK {} AT {},{},{}", e.mPlayer->getRealName(),
-            // bl->getTypeName(), blp.x, blp.y, blp.z);
-
-            // 检测方块是否在设置的方块列表中
-            if (const auto r = block_list.find(bn); r != block_list.end()) {
-                // 仅在方块连锁启用时可连锁 (默认启用)
-                if (!r->second.enabled) return true;
-                // 仅在玩家的相应方块开关开启时可连锁 (默认开启)
-                if (!playerSetting.getSwitch(e.mPlayer->getXuid(), bn)) return true;
-                auto*        tool     = const_cast<ItemStack*>(&e.mPlayer->getSelectedItem());
-                const string toolType = tool->getTypeName();
-                // logger.info("{}", toolType);
-                auto& material = bl->getMaterial();
-
-                // 判断是否含有精准采集bl->getName();
-                const auto nbt = tool->getNbt();
-                // logger.debug("{}", nbt->toSNBT());
-                const bool hasSilkTouch = getEnchantLevel(nbt, 16);
-
-                // 如果该工具无法挖掘就结束
-                if (const bool canThisToolChain =
-                        (r->second.tools.empty()                    // 没有设置指定工具
-                         || v_contains(r->second.tools, toolType)   // 使用了指定工具
-                         || v_contains(r->second.tools, string("")) // 使用空字符串允许使用手挖掘
-                        )
-                        && (material.isAlwaysDestroyable() || tool->canDestroySpecial(*bl)) // 可挖掘
-                        && ((r->second.enchSilkTouch == 1 && hasSilkTouch)                  // 仅精准采集工具
-                            || (r->second.enchSilkTouch == 0 && !hasSilkTouch)              // 禁止精准采集工具
-                            || r->second.enchSilkTouch == 2)                                // 不论是否精准采集
-                    ;
-                    !canThisToolChain)
-                    return true;
-
-                // logger.debug("{} is chainable using {}", bn, tool->getTypeName());
-                int limit = block_list[bn].limit;
-                if (tool->isDamageableItem()) {
-                    limit = std::min(
-                        limit,
-                        static_cast<int>(
-                            (tool->getMaxDamage() - getDamageFromNbt(nbt) - 1)
-                            / (ConfigManager::multiply_damage_switch ? ConfigManager::multiply_damage_max : 1)
-                        )
-                    ); // 留一点耐久,防止炸掉
-                }
-                if (economic.mode > 0 && block_list[bn].cost > 0)
-                    limit = std::min(limit, static_cast<int>(economic.getMoney(e.mPlayer) / block_list[bn].cost));
-
-                // 仅当多个时
-                if (limit > 1) {
-                    // add task
-                    const int id = static_cast<int>(task_list.size()) + 1;
-                    task_list.insert(pair<int, MinerInfo>{
-                        id,
-                        {bn, bli.getDimensionId(), limit, 0, 0, tool, getEnchantLevel(nbt, 17), e.mPlayer}
-                    });
-                    // add pos2id
-                    string pos = getBlockDimAndPos(bli);
-
-                    miner2(id, &blp);
-
-                    // pos2id.insert(std::make_pair(blp.toString(), id));
-                }
-            }
-            return true;
-        });
-
-        return true;
-    });
-}
 
 // get a string like "dim,x,y,z"
-std::string getBlockDimAndPos(BlockActor& bli) {
-    // TODO: 修复获取方块维度
-    std::string pos = /* to_string(bli.getDimensionId()) + */ ',' + bli.getPosition().toString();
-    return pos;
+std::string getBlockDimAndPos(ll::event::PlayerDestroyBlockEvent& e) {
+    std::string spos = std::to_string(e.self().getDimensionId()) + ',' + e.pos().toString();
+    return spos;
 }
+
+
+void initEventOnPlayerDestroy() {
+    auto& bus = ll::event::EventBus::getInstance();
+    // 注册监听器
+    mPlayerDestroyBlockEventListener =
+        bus.emplaceListener<ll::event::PlayerDestroyBlockEvent>([](ll::event::PlayerDestroyBlockEvent& e) {
+            // To prevent recursion while detecting block destroyability
+            if (chaining_blocks.contains(getBlockDimAndPos(e))) {
+                return true;
+            }
+
+            // Handle event in the next tick for compatibility
+            mNextTickScheduler.add<ll::schedule::DelayTask>(1_tick, [=]() {
+                const Block* bli = &e.self().getDimensionBlockSourceConst().getBlock(e.pos()); // 挖掘前的方块的实例
+                const BlockPos blp = e.pos();
+
+                // 获取同位置的方块新实例, 检测方块是否已掉落, 未掉落(被领地拦截等)则不进行连锁
+                if (!e.self().getDimensionBlockSourceConst().getBlock(e.pos()).isAir()) return true;
+
+                // 仅在生存模式下可连锁
+                if (e.self().getPlayerGameType() != GameType::Survival) return true;
+                // 仅当玩家连锁开关打开时可连锁 (默认开启)
+                if (!playersetting::playerSetting.getSwitch(e.self().getXuid())) return true;
+                // 开启潜行连锁 (默认关闭) 后，仅当玩家潜行时可连锁
+                if (playersetting::playerSetting.getSwitch(e.self().getXuid(), "chain_while_sneaking_only")
+                    && !e.self().isSneaking())
+                    return true;
+
+                auto         bl = bli; // 不知道为什么要重新获取方块实例（直接引用）
+                const string bn = bl->getName().getString();
+                // logger.debug("{} {} {} {} {},{},{}", bl->getName().getString(), bl->getId(), bl->getDescriptionId(),
+                // bl->getVariant(), blp.x, blp.y, blp.z); logger.debug("{} BREAK {} AT {},{},{}",
+                // e.self()->getRealName(), bl->getTypeName(), blp.x, blp.y, blp.z);
+
+                // 检测方块是否在设置的方块列表中
+                if (const auto r = config::block_list.find(bn); r != config::block_list.end()) {
+                    // 仅在方块连锁启用时可连锁 (默认启用)
+                    if (!r->second.enabled) return true;
+                    // 仅在玩家的相应方块开关开启时可连锁 (默认开启)
+                    if (!playersetting::playerSetting.getSwitch(e.self().getXuid(), bn)) return true;
+                    auto*        tool     = const_cast<ItemStack*>(&e.self().getSelectedItem());
+                    const string toolType = tool->getTypeName();
+                    // logger.info("{}", toolType);
+                    const auto& material = bl->getMaterial();
+
+                    // 判断是否含有精准采集bl->getName();
+                    auto nbt = tool->save();
+                    // logger.debug("{}", nbt->toSNBT());
+                    const bool hasSilkTouch = getEnchantLevel(nbt, 16);
+
+                    // 如果该工具无法挖掘就结束
+                    if (const bool canThisToolChain =
+                            (r->second.tools.empty()                           // 没有设置指定工具
+                             || utils::v_contains(r->second.tools, toolType)   // 使用了指定工具
+                             || utils::v_contains(r->second.tools, string("")) // 使用空字符串允许使用手挖掘
+                            )
+                            && (material.isAlwaysDestroyable() || tool->canDestroySpecial(*bl)) // 可挖掘
+                            && ((r->second.enchSilkTouch == 1 && hasSilkTouch)                  // 仅精准采集工具
+                                || (r->second.enchSilkTouch == 0 && !hasSilkTouch) // 禁止精准采集工具
+                                || r->second.enchSilkTouch == 2)                   // 不论是否精准采集
+                        ;
+                        !canThisToolChain)
+                        return true;
+
+                    // logger.debug("{} is chainable using {}", bn, tool->getTypeName());
+                    int limit = config::block_list[bn].limit;
+                    if (tool->isDamageableItem()) {
+                        limit = std::min(
+                            limit,
+                            static_cast<int>(
+                                (tool->getMaxDamage() - getDamageFromNbt(nbt) - 1)
+                                / (config::ConfigManager::multiply_damage_switch
+                                       ? config::ConfigManager::multiply_damage_max
+                                       : 1)
+                            )
+                        ); // 留一点耐久,防止炸掉
+                    }
+                    if (economic::economic.mode > 0 && config::block_list[bn].cost > 0)
+                        limit = std::min(
+                            limit,
+                            static_cast<int>(economic::economic.getMoney(&e.self()) / config::block_list[bn].cost)
+                        );
+
+                    // 仅当多个时
+                    if (limit > 1) {
+                        // add task
+                        const int id = static_cast<int>(task_list.size()) + 1;
+                        task_list.insert(std::pair<int, MinerInfo>{
+                            id, // 因为挖掘的方块和玩家是在同一维度，所以直接用玩家当前维度ID
+                            {bn, e.self().getDimensionId().id, limit, 0, 0, tool, getEnchantLevel(nbt, 17), &e.self()}
+                        });
+                        // add pos2id
+                        // string pos = getBlockDimAndPos(e);
+
+                        miner2(id, &blp);
+
+                        // pos2id.insert(std::make_pair(blp.toString(), id));
+                    }
+                }
+                return true;
+            });
+
+            return true;
+        });
+}
+
 
 // get enchant level with nbt && enchid
 // return level (0 when non-exist)
-short getEnchantLevel(const unique_ptr<CompoundTag>& nbt, const short id) {
+short getEnchantLevel(const std::unique_ptr<CompoundTag>& nbt, const short id) {
     if (nbt->contains("tag")) {
         // 必须判断否则会报错
-        if (const auto tag = nbt->getCompound("tag"); tag->contains(ItemStack::TAG_ENCHANTS)) {
-            for (const ListTag* ench = tag->getList(ItemStack::TAG_ENCHANTS); const auto it : *ench) {
-                if (const CompoundTag* ec = it->asCompoundTag(); ec->getShort("id") == id) {
-                    return ec->getShort("lvl");
+        const auto tag = nbt->getCompound("tag");
+        if (tag->contains(ItemStack::TAG_ENCHANTS)) {
+            const ListTag* ench = tag->getList(ItemStack::TAG_ENCHANTS);
+            short          val;
+            ench->forEachCompoundTag([&](CompoundTag const& tag) {
+                if (tag.getShort("id") == id) {
+                    val = tag.getShort("lvl");
                 }
-            }
+            });
+            return val;
         }
     }
     return 0;
 }
 
-int getDamageFromNbt(const unique_ptr<CompoundTag>& nbt) {
+int getDamageFromNbt(const std::unique_ptr<CompoundTag>& nbt) {
     if (nbt->contains("tag")) {
         // 必须判断否则会报错
         if (const auto tag = nbt->getCompound("tag"); tag->contains("Damage")) {
@@ -206,39 +206,45 @@ int getDamageFromNbt(const unique_ptr<CompoundTag>& nbt) {
 
 int toolDamage(ItemStack& tool, const int count) {
     int        damage = count;
-    const auto nbt    = tool.getNbt();
+    const auto nbt    = tool.save();
     // logger.debug("before: {} {}", nbt->toSNBT(), tool.getMaxDamage());
-    if (ConfigManager::multiply_damage_switch) {
-        const double rate = ConfigManager::multiply_damage_min
-                          + (ConfigManager::multiply_damage_max - ConfigManager::multiply_damage_min) * ud(re) / 100;
+    if (config::ConfigManager::multiply_damage_switch) {
+        const double rate =
+            config::ConfigManager::multiply_damage_min
+            + (config::ConfigManager::multiply_damage_max - config::ConfigManager::multiply_damage_min) * ud(re) / 100;
         // logger.debug("rate:{}", rate);
         damage = static_cast<int>(count * rate);
     }
+    short newDam = tool.getDamageValue() + damage;
+    if (newDam < tool.getMaxDamage()) {
+        tool.setDamageValue(newDam);
+    } else damage = 0;
     // logger.debug("{} {} {}", tool.getDamageValue(), tool.hasDamageValue(), damage);
     /*tool.setDamageValue(tool.getDamageValue() + damage);*/
-    if (nbt->contains("tag")) {
-        // 必须判断否则会报错
-        if (const auto tag = nbt->getCompound("tag"); tag->contains("Damage")) {
-            if (tag->getInt("Damage") + damage < tool.getMaxDamage()) {
-                tag->putInt("Damage", tag->getInt("Damage") + damage);
-                // logger.debug("{}", tag->getInt("Damage"));
+    // if (nbt->contains("tag")) {
+    //     // 必须判断否则会报错
+    //     if (const auto tag = nbt->getCompound("tag"); tag->contains("Damage")) {
+    //         if (tag->getInt("Damage") + damage < tool.getMaxDamage()) {
+    //             tag->putInt("Damage", tag->getInt("Damage") + damage);
+    //             // logger.debug("{}", tag->getInt("Damage"));
 
-                tool.setNbt(nbt.get());
-                // logger.debug("after:{}", tool.getNbt()->toSNBT());
-            } else damage = 0;
-        } else {
-            // 没有Damage
-            tag->putInt("Damage", damage);
-            tool.setNbt(nbt.get());
-        }
-    } else {
-        // 没有tag
-        auto compoundTag = CompoundTag::create();
-        compoundTag->putInt("Damage", damage);
-        nbt->putCompound("tag", unique_ptr<CompoundTag>(compoundTag.release()));
-        tool.setNbt(nbt.get());
-        // logger.debug("new damage:{}", nbt->toSNBT());
-    }
+    //             tool.setNbt(nbt.get());
+    //             // tool.
+    //             // logger.debug("after:{}", tool.getNbt()->toSNBT());
+    //         } else damage = 0;
+    //     } else {
+    //         // 没有Damage
+    //         tag->putInt("Damage", damage);
+    //         tool.setNbt(nbt.get());
+    //     }
+    // } else {
+    //     // 没有tag
+    //     auto compoundTag = CompoundTag::create();
+    //     compoundTag->putInt("Damage", damage);
+    //     nbt->putCompound("tag", unique_ptr<CompoundTag>(compoundTag.release()));
+    //     tool.setNbt(nbt.get());
+    //     // logger.debug("new damage:{}", nbt->toSNBT());
+    // }
     // logger.debug("after: {} {}", nbt->toSNBT(), tool.getMaxDamage());
     return damage;
 }
@@ -253,10 +259,10 @@ using std::get;
 using std::tuple;
 
 void miner2(int task_id, const BlockPos* start_pos) {
-    queue<BlockPos> block_q;
+    std::queue<BlockPos> block_q;
     block_q.push(*start_pos);
     // 与方块相邻的六个方块
-    static vector<tuple<int, int, int>> dirs1 = {
+    static std::vector<tuple<int, int, int>> dirs1 = {
         {1,  0,  0 },
         {-1, 0,  0 },
         {0,  1,  0 },
@@ -265,7 +271,7 @@ void miner2(int task_id, const BlockPos* start_pos) {
         {0,  0,  -1}
     };
     // 以方块为中心的26个方块，优先相邻方块
-    static vector<tuple<int, int, int>> dirs2 = {
+    static std::vector<tuple<int, int, int>> dirs2 = {
         {1,  0,  0 },
         {-1, 0,  0 },
         {0,  1,  0 },
@@ -297,43 +303,60 @@ void miner2(int task_id, const BlockPos* start_pos) {
     MinerInfo& curTask = task_list[task_id];
 
     // 判断使用的连锁范围
-    vector<tuple<int, int, int>>& dirs = dirs1;
-    if (config_j["default_detect_method"] == "cube" || block_list[task_list[task_id].name].detectMode == "cube") {
+    std::vector<tuple<int, int, int>>& dirs = dirs1;
+    if (config::config_j["default_detect_method"] == "cube"
+        || config::block_list[task_list[task_id].name].detectMode == "cube") {
         dirs = dirs2;
     }
 
     // 记录不可挖掘的方块
-    unordered_set<string> undamagableBlocks;
+    std::unordered_set<std::string> undamagableBlocks;
 
     while (curTask.cnt < curTask.limit && !block_q.empty()) {
         BlockPos curpos = block_q.front();
         for (auto& dir : dirs) {
-            auto         newpos = BlockPos(curpos.x + get<0>(dir), curpos.y + get<1>(dir), curpos.z + get<2>(dir));
-            const Block* bl     = Level::getBlock(newpos, curTask.dimId);
-            if (const auto r = block_list.find(curTask.name);
-                (bl->getName().getString() == curTask.name || v_contains(r->second.similar, bl->getName().getString()))
+            auto newpos = BlockPos(curpos.x + get<0>(dir), curpos.y + get<1>(dir), curpos.z + get<2>(dir));
+            // const Block* bl     = Level::getBlock(newpos, curTask.dimId);
+            const Block* bl = &ll::service::getLevel()
+                                   ->getOrCreateDimension(curTask.dimId)
+                                   ->getBlockSourceFromMainChunkSource()
+                                   .getBlock(newpos);
+            if (const auto r = config::block_list.find(curTask.name);
+                (bl->getName().getString() == curTask.name
+                 || utils::v_contains(r->second.similar, bl->getName().getString()))
                 && !undamagableBlocks.contains(fmt::format("{}.{}.{}.{}", curpos.x, curpos.y, curpos.z, curTask.dimId)
                 )) {
                 block_q.push(newpos);
             }
         }
 
-        if (const Block* bl = Level::getBlock(curpos, curTask.dimId); bl->getId() != 0) {
+        // if (const Block* bl = Level::getBlock(curpos, curTask.dimId); bl->getId() != 0) {
+        if (const Block* bl = &ll::service::getLevel()
+                                   ->getOrCreateDimension(curTask.dimId)
+                                   ->getBlockSourceFromMainChunkSource()
+                                   .getBlock(curpos);
+            bl->getTypeName() != "minecraft:air") {
             // 破坏方块
             // 主动call玩家破坏事件，当事件被拦截时结束连锁（某个方块进入了领地等）
-            const auto ev      = new Event::PlayerDestroyBlockEvent();
-            ev->mBlockInstance = Level::getBlockInstance(curpos, curTask.dimId);
-            ev->mPlayer        = curTask.pl;
-            string dp          = getBlockDimAndPos(ev->mBlockInstance);
+            // const auto ev      = new Event::PlayerDestroyBlockEvent();
+            // ev->mBlockInstance = Level::getBlockInstance(curpos, curTask.dimId);
+            // ev->mPlayer        = curTask.pl;
+            auto   ev = ll::event::player::PlayerDestroyBlockEvent{*curTask.pl, curpos};
+            string dp = getBlockDimAndPos(ev);
             chaining_blocks.insert(dp);
-            const bool res = ev->call();
+            // const bool res = ev->call();
+            ll::event::EventBus::getInstance().publish(ev);
             chaining_blocks.erase(dp);
-            if (!res) {
+            if (ev.isCancelled()) {
                 // 将方块标记为不可挖掘
                 undamagableBlocks.insert(fmt::format("{}.{}.{}.{}", curpos.x, curpos.y, curpos.z, curTask.dimId));
             } else {
                 bl->playerDestroy(*curTask.pl, curpos); // playerDestroy仅生成掉落物
-                Level::setBlock(curpos, curTask.dimId, "minecraft:air", 0);
+                // Level::setBlock(curpos, curTask.dimId, "minecraft:air", 0);
+                ll::service::getLevel()
+                    ->getOrCreateDimension(curTask.dimId)
+                    ->getBlockSourceFromMainChunkSource()
+                    .removeBlock(curpos); // 移除方块
 
                 // 累计耐久损失
                 // 1.当工具未附魔耐久时+1
@@ -347,7 +370,7 @@ void miner2(int task_id, const BlockPos* start_pos) {
     }
 
     // 在下一刻进行结果计算，否则手持物品无法更新
-    Schedule::nextTick([&, task_id]() {
+    mNextTickScheduler.add<ll::schedule::DelayTask>(1_tick, [&, task_id]() {
         if (const auto [name, dimId, limit, cnt, cntD, tool, enchU, pl] = curTask; cnt > 0) {
             // 减少耐久
             ItemStack curTool = pl->getSelectedItem();
@@ -356,36 +379,43 @@ void miner2(int task_id, const BlockPos* start_pos) {
             //  mi.pl->setItemSlot(mi.pl->getEquipmentSlotForItem(tool), tool);
             pl->setSelectedItem(curTool);
             pl->refreshInventory();
-            const string prefix = ConfigManager::msg_prefix;
-            string       msg    = prefix;
-            msg += s_replace(config_j["msg"]["mine.success"], "%Count%", std::to_string(cnt)); // 有一个是自己挖的
-            if (config_j["switch"]["mine.damage"]) {
+            const string prefix  = config::ConfigManager::msg_prefix;
+            string       msg     = prefix;
+            msg                 += utils::s_replace(
+                config::config_j["msg"]["mine.success"],
+                "%Count%",
+                std::to_string(cnt)
+            ); // 有一个是自己挖的
+            if (config::config_j["switch"]["mine.damage"]) {
                 msg += (msg.length() > prefix.length() ? " " : "")
-                     + s_replace(config_j["msg"]["mine.damage"], "%Damage%", std::to_string(dmg));
+                     + utils::s_replace(config::config_j["msg"]["mine.damage"], "%Damage%", std::to_string(dmg));
             }
-            if (economic.mode > 0) {
-                if (const long long cost = block_list[name].cost * (cnt - 1); cost > 0) {
-                    economic.reduceMoney(pl, cost);
-                    msg += (msg.length() > prefix.length() ? " " : "") + config_j["msg"]["money.use"];
-                    msg  = s_replace(msg, "%Cost%", std::to_string(cost));
-                    msg  = s_replace(msg, "%Remain%", std::to_string(economic.getMoney(pl)));
-                    msg  = s_replace(msg, "%Name%", config_j["money.name"]);
+            if (economic::economic.mode > 0) {
+                if (const long long cost = config::block_list[name].cost * (cnt - 1); cost > 0) {
+                    economic::economic.reduceMoney(pl, cost);
+                    msg += (msg.length() > prefix.length() ? " " : "") + config::config_j["msg"]["money.use"];
+                    msg  = utils::s_replace(msg, "%Cost%", std::to_string(cost));
+                    msg  = utils::s_replace(msg, "%Remain%", std::to_string(economic::economic.getMoney(pl)));
+                    msg  = utils::s_replace(msg, "%Name%", config::config_j["money.name"]);
                 }
             }
             if (curTool.hasDamageValue() && (curTool.getMaxDamage() - curTool.getDamageValue()) <= 2) {
                 msg += (msg.length() > prefix.length() ? '\n' + prefix : "");
-                msg += s_replace(
-                    config_j["msg"]["mine.damage.warning"],
+                msg += utils::s_replace(
+                    config::config_j["msg"]["mine.damage.warning"],
                     "%Damage%",
                     std::to_string(curTool.getMaxDamage() - curTool.getDamageValue())
                 );
             }
             // 开启了成功提示且采集多个方块时发送提示
-            if (config_j["switch"]["mine.success"] && cnt > 1) {
-                pl->sendTextPacket(msg);
+            if (config::config_j["switch"]["mine.success"] && cnt > 1) {
+                pl->sendMessage(msg);
             }
         }
 
         task_list.erase(task_id);
     });
 }
+
+
+} // namespace chainminer3::plugin

@@ -1,10 +1,12 @@
 
 
 #include "nlohmann/json.hpp"
+#include "nlohmann/json_fwd.hpp"
 #include <string>
 #include <vector>
 
 namespace chainminer3::config {
+
 
 void initConfig();
 
@@ -37,6 +39,11 @@ public:
     static double      multiply_damage_max;
     static std::string msg_prefix;
 };
+
+// 全局变量
+extern nlohmann::json                             config_j;
+extern std::vector<std::string>                   op_list;
+extern std::unordered_map<std::string, BlockInfo> block_list;
 
 
 } // namespace chainminer3::config
