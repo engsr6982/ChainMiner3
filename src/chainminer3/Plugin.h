@@ -13,6 +13,9 @@ void initEventOnPlayerDestroy();
 
 void initEventOnBlockChanged();
 
+// unload plugin
+void removeListener();
+
 // miner
 void miner1(int id, BlockPos* pos, bool sub = false);
 void miner2(int task_id, const BlockPos* start_pos);

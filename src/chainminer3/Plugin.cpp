@@ -35,6 +35,8 @@ using ll::chrono_literals::operator""_tick;
 
 namespace chainminer3::plugin {
 
+void removeListener() { ll::event::EventBus::getInstance().removeListener(mPlayerDestroyBlockEventListener); }
+
 
 typedef struct minerinfo {
     string     name;    // 方块名称
