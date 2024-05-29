@@ -7,7 +7,7 @@ add_repositories("liteldev-repo https://github.com/LiteLDev/xmake-repo.git")
 -- please note that you should add bdslibrary yourself if using dev version
 add_requires(
     "levilamina 0.12.1",
-    "legacymoney 0.7.3",
+    "legacymoney 0.7.0",
     "rapidjson 1.1.0"
 )
 
@@ -30,7 +30,11 @@ target("ChainMiner3") -- Change this to your plugin name.
     add_defines("NOMINMAX", "UNICODE")
     add_files("src/**.cpp")
     add_includedirs("src", "src/third-party/tessil")
-    add_packages("levilamina")
+    add_packages(
+        "levilamina",
+        "rapidjson",
+        "legacymoney"
+    )
     add_shflags("/DELAYLOAD:bedrock_server.dll") -- To use symbols provided by SymbolProvider.
     set_exceptions("none") -- To avoid conflicts with /EHa.
     set_kind("shared")
