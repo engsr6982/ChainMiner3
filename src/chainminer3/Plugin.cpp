@@ -70,106 +70,101 @@ std::string getBlockDimAndPos(ll::event::PlayerDestroyBlockEvent& e) {
 void initEventOnPlayerDestroy() {
     auto& bus = ll::event::EventBus::getInstance();
     // 注册监听器
-    mPlayerDestroyBlockEventListener =
-        bus.emplaceListener<ll::event::PlayerDestroyBlockEvent>([](ll::event::PlayerDestroyBlockEvent& e) {
-            // To prevent recursion while detecting block destroyability
-            if (chaining_blocks.contains(getBlockDimAndPos(e))) {
+    mPlayerDestroyBlockEventListener = bus.emplaceListener<
+        ll::event::PlayerDestroyBlockEvent>([](ll::event::PlayerDestroyBlockEvent& e) {
+        // To prevent recursion while detecting block destroyability
+        if (chaining_blocks.contains(getBlockDimAndPos(e))) {
+            return true;
+        }
+        // 在当前刻获取方块实例，如果在下一刻获取，方块会被Minecraft处理掉
+        const Block* block =
+            &e.self().getDimension().getBlockSourceFromMainChunkSource().getBlock(e.pos()); // 挖掘前的方块的实例
+        const BlockPos blockPos  = e.pos();
+        const string   blockName = block->getTypeName();
+        std::cout << "blockName:" << blockName << std::endl;
+
+        // Handle event in the next tick for compatibility
+        mNextTickScheduler.add<ll::schedule::DelayTask>(1_tick, [e, block, blockPos, blockName]() {
+            // 获取同位置的方块新实例, 检测方块是否已掉落, 未掉落(被领地拦截等)则不进行连锁
+            if (!e.self().getDimension().getBlockSourceFromMainChunkSource().getBlock(e.pos()).isAir()) return true;
+            // 仅在生存模式下可连锁
+            if (e.self().getPlayerGameType() != GameType::Survival) return true;
+            // 仅当玩家连锁开关打开时可连锁 (默认开启)
+            if (!playersetting::playerSetting.getSwitch(e.self().getXuid())) return true;
+            // 开启潜行连锁 (默认关闭) 后，仅当玩家潜行时可连锁
+            if (playersetting::playerSetting.getSwitch(e.self().getXuid(), "chain_while_sneaking_only")
+                && !e.self().isSneaking())
                 return true;
-            }
 
-            // Handle event in the next tick for compatibility
-            mNextTickScheduler.add<ll::schedule::DelayTask>(1_tick, [=]() {
-                const Block* bli = &e.self().getDimensionBlockSourceConst().getBlock(e.pos()); // 挖掘前的方块的实例
-                const BlockPos blp = e.pos();
+            // 检测方块是否在设置的方块列表中
+            if (const auto r = config::block_list.find(blockName); r != config::block_list.end()) {
+                // 仅在方块连锁启用时可连锁 (默认启用)
+                if (!r->second.enabled) return true;
+                // 仅在玩家的相应方块开关开启时可连锁 (默认开启)
+                if (!playersetting::playerSetting.getSwitch(e.self().getXuid(), blockName)) return true;
+                auto*        tool     = const_cast<ItemStack*>(&e.self().getSelectedItem());
+                const string toolType = tool->getTypeName();
+                // logger.info("{}", toolType);
+                const auto& material = block->getMaterial();
 
-                // 获取同位置的方块新实例, 检测方块是否已掉落, 未掉落(被领地拦截等)则不进行连锁
-                if (!e.self().getDimensionBlockSourceConst().getBlock(e.pos()).isAir()) return true;
+                // 判断是否含有精准采集bl->getName();
+                auto nbt = tool->save();
+                // logger.debug("{}", nbt->toSNBT());
+                const bool hasSilkTouch = getEnchantLevel(nbt, 16);
 
-                // 仅在生存模式下可连锁
-                if (e.self().getPlayerGameType() != GameType::Survival) return true;
-                // 仅当玩家连锁开关打开时可连锁 (默认开启)
-                if (!playersetting::playerSetting.getSwitch(e.self().getXuid())) return true;
-                // 开启潜行连锁 (默认关闭) 后，仅当玩家潜行时可连锁
-                if (playersetting::playerSetting.getSwitch(e.self().getXuid(), "chain_while_sneaking_only")
-                    && !e.self().isSneaking())
+                // 如果该工具无法挖掘就结束
+                if (const bool canThisToolChain =
+                        (r->second.tools.empty()                           // 没有设置指定工具
+                         || utils::v_contains(r->second.tools, toolType)   // 使用了指定工具
+                         || utils::v_contains(r->second.tools, string("")) // 使用空字符串允许使用手挖掘
+                        )
+                        && (material.isAlwaysDestroyable() || tool->canDestroySpecial(*block)) // 可挖掘
+                        && ((r->second.enchSilkTouch == 1 && hasSilkTouch)                     // 仅精准采集工具
+                            || (r->second.enchSilkTouch == 0 && !hasSilkTouch) // 禁止精准采集工具
+                            || r->second.enchSilkTouch == 2)                   // 不论是否精准采集
+                    ;
+                    !canThisToolChain)
                     return true;
-
-                auto         bl = bli; // 不知道为什么要重新获取方块实例（直接引用）
-                const string bn = bl->getName().getString();
-                // logger.debug("{} {} {} {} {},{},{}", bl->getName().getString(), bl->getId(), bl->getDescriptionId(),
-                // bl->getVariant(), blp.x, blp.y, blp.z); logger.debug("{} BREAK {} AT {},{},{}",
-                // e.self()->getRealName(), bl->getTypeName(), blp.x, blp.y, blp.z);
-
-                // 检测方块是否在设置的方块列表中
-                if (const auto r = config::block_list.find(bn); r != config::block_list.end()) {
-                    // 仅在方块连锁启用时可连锁 (默认启用)
-                    if (!r->second.enabled) return true;
-                    // 仅在玩家的相应方块开关开启时可连锁 (默认开启)
-                    if (!playersetting::playerSetting.getSwitch(e.self().getXuid(), bn)) return true;
-                    auto*        tool     = const_cast<ItemStack*>(&e.self().getSelectedItem());
-                    const string toolType = tool->getTypeName();
-                    // logger.info("{}", toolType);
-                    const auto& material = bl->getMaterial();
-
-                    // 判断是否含有精准采集bl->getName();
-                    auto nbt = tool->save();
-                    // logger.debug("{}", nbt->toSNBT());
-                    const bool hasSilkTouch = getEnchantLevel(nbt, 16);
-
-                    // 如果该工具无法挖掘就结束
-                    if (const bool canThisToolChain =
-                            (r->second.tools.empty()                           // 没有设置指定工具
-                             || utils::v_contains(r->second.tools, toolType)   // 使用了指定工具
-                             || utils::v_contains(r->second.tools, string("")) // 使用空字符串允许使用手挖掘
-                            )
-                            && (material.isAlwaysDestroyable() || tool->canDestroySpecial(*bl)) // 可挖掘
-                            && ((r->second.enchSilkTouch == 1 && hasSilkTouch)                  // 仅精准采集工具
-                                || (r->second.enchSilkTouch == 0 && !hasSilkTouch) // 禁止精准采集工具
-                                || r->second.enchSilkTouch == 2)                   // 不论是否精准采集
-                        ;
-                        !canThisToolChain)
-                        return true;
-
-                    // logger.debug("{} is chainable using {}", bn, tool->getTypeName());
-                    int limit = config::block_list[bn].limit;
-                    if (tool->isDamageableItem()) {
-                        limit = std::min(
-                            limit,
-                            static_cast<int>(
-                                (tool->getMaxDamage() - getDamageFromNbt(nbt) - 1)
-                                / (config::ConfigManager::multiply_damage_switch
-                                       ? config::ConfigManager::multiply_damage_max
-                                       : 1)
-                            )
-                        ); // 留一点耐久,防止炸掉
-                    }
-                    if (economic::economic.mode > 0 && config::block_list[bn].cost > 0)
-                        limit = std::min(
-                            limit,
-                            static_cast<int>(economic::economic.getMoney(&e.self()) / config::block_list[bn].cost)
-                        );
-
-                    // 仅当多个时
-                    if (limit > 1) {
-                        // add task
-                        const int id = static_cast<int>(task_list.size()) + 1;
-                        task_list.insert(std::pair<int, MinerInfo>{
-                            id, // 因为挖掘的方块和玩家是在同一维度，所以直接用玩家当前维度ID
-                            {bn, e.self().getDimensionId().id, limit, 0, 0, tool, getEnchantLevel(nbt, 17), &e.self()}
-                        });
-                        // add pos2id
-                        // string pos = getBlockDimAndPos(e);
-
-                        miner2(id, &blp);
-
-                        // pos2id.insert(std::make_pair(blp.toString(), id));
-                    }
+                // logger.debug("{} is chainable using {}", bn, tool->getTypeName());
+                int limit = config::block_list[blockName].limit;
+                if (tool->isDamageableItem()) {
+                    limit = std::min(
+                        limit,
+                        static_cast<int>(
+                            (tool->getMaxDamage() - getDamageFromNbt(nbt) - 1)
+                            / (config::ConfigManager::multiply_damage_switch
+                                   ? config::ConfigManager::multiply_damage_max
+                                   : 1)
+                        )
+                    ); // 留一点耐久,防止炸掉
                 }
-                return true;
-            });
+                if (economic::economic.mode > 0 && config::block_list[blockName].cost > 0)
+                    limit = std::min(
+                        limit,
+                        static_cast<int>(economic::economic.getMoney(&e.self()) / config::block_list[blockName].cost)
+                    );
 
+                // 仅当多个时
+                if (limit > 1) {
+                    // add task
+                    const int id = static_cast<int>(task_list.size()) + 1;
+                    task_list.insert(std::pair<int, MinerInfo>{
+                        id, // 因为挖掘的方块和玩家是在同一维度，所以直接用玩家当前维度ID
+                        {blockName, e.self().getDimensionId().id, limit, 0, 0, tool, getEnchantLevel(nbt, 17), &e.self()
+                        }
+                    });
+                    // add pos2id
+                    // string pos = getBlockDimAndPos(e);
+
+                    miner2(id, &blockPos);
+
+                    // pos2id.insert(std::make_pair(blp.toString(), id));
+                }
+            }
             return true;
         });
+        return true;
+    });
 }
 
 
@@ -313,13 +308,11 @@ void miner2(int task_id, const BlockPos* start_pos) {
 
     // 记录不可挖掘的方块
     std::unordered_set<std::string> undamagableBlocks;
-
     while (curTask.cnt < curTask.limit && !block_q.empty()) {
         BlockPos curpos = block_q.front();
         for (auto& dir : dirs) {
-            auto newpos = BlockPos(curpos.x + get<0>(dir), curpos.y + get<1>(dir), curpos.z + get<2>(dir));
-            // const Block* bl     = Level::getBlock(newpos, curTask.dimId);
-            const Block* bl = &ll::service::getLevel()
+            auto         newpos = BlockPos(curpos.x + get<0>(dir), curpos.y + get<1>(dir), curpos.z + get<2>(dir));
+            const Block* bl     = &ll::service::getLevel()
                                    ->getOrCreateDimension(curTask.dimId)
                                    ->getBlockSourceFromMainChunkSource()
                                    .getBlock(newpos);
@@ -340,13 +333,9 @@ void miner2(int task_id, const BlockPos* start_pos) {
             bl->getTypeName() != "minecraft:air") {
             // 破坏方块
             // 主动call玩家破坏事件，当事件被拦截时结束连锁（某个方块进入了领地等）
-            // const auto ev      = new Event::PlayerDestroyBlockEvent();
-            // ev->mBlockInstance = Level::getBlockInstance(curpos, curTask.dimId);
-            // ev->mPlayer        = curTask.pl;
             auto   ev = ll::event::player::PlayerDestroyBlockEvent{*curTask.pl, curpos};
             string dp = getBlockDimAndPos(ev);
             chaining_blocks.insert(dp);
-            // const bool res = ev->call();
             ll::event::EventBus::getInstance().publish(ev);
             chaining_blocks.erase(dp);
             if (ev.isCancelled()) {
@@ -354,7 +343,6 @@ void miner2(int task_id, const BlockPos* start_pos) {
                 undamagableBlocks.insert(fmt::format("{}.{}.{}.{}", curpos.x, curpos.y, curpos.z, curTask.dimId));
             } else {
                 bl->playerDestroy(*curTask.pl, curpos); // playerDestroy仅生成掉落物
-                // Level::setBlock(curpos, curTask.dimId, "minecraft:air", 0);
                 ll::service::getLevel()
                     ->getOrCreateDimension(curTask.dimId)
                     ->getBlockSourceFromMainChunkSource()
