@@ -1,16 +1,21 @@
 {
     "format_version": 2,
-    "tooth": "https://github.com/HJH201314/ChainMiner",
-    "version": "0.3.3",
+    "tooth": "github.com/engsr6982/ChainMiner3",
+    "version": "0.1.0",
     "info": {
         "name": "ChainMiner3",
         "description": "A plugin helps players to gather blocks quicker.",
-        "author": "HJH201314",
+        "author": "HJH201314 & engsr6982",
         "tags": [
             "plugin",
             "levilamina",
             "chainminer"
         ]
+    },
+    "asset_url": "https://github.com/engsr6982/ChainMiner3/releases/download/v0.1.0/ChainMiner3-windows-x64.zip",
+    "prerequisites": {
+        "github.com/LiteLDev/LeviLamina": "0.12.x",
+        "github.com/LiteLDev/LegacyMoney": "0.7.x"
     },
     "files": {
         "place": [
