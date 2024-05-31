@@ -33,7 +33,7 @@ bool MyPlugin::enable() {
     // Code for enabling the plugin goes here.
 
     chainminer3::command::registerCommand();
-    chainminer3::plugin::initEventOnPlayerDestroy();
+    chainminer3::plugin::registerEvent();
 
     return true;
 }

@@ -41,6 +41,10 @@ target("ChainMiner3") -- Change this to your plugin name.
     set_languages("c++20")
     set_symbols("debug")
 
+    if is_mode("debug") then
+        add_defines("DEBUG")
+    end
+
     after_build(function (target)
         local plugin_packer = import("scripts.after_build")
 
