@@ -29,7 +29,7 @@ target("ChainMiner3") -- Change this to your plugin name.
     )
     add_defines("NOMINMAX", "UNICODE")
     add_files("src/**.cpp")
-    add_includedirs("src", "src/third-party/tessil")
+    add_includedirs("src", "third-party/tessil")
     add_packages(
         "levilamina",
         "rapidjson",
