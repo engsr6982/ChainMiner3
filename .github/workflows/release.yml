@@ -106,6 +106,6 @@ jobs:
         uses: engsr6982/upload-minebbs@v1.2.0
         with:
           minebbs_token: ${{ secrets.MINEBBS_TOKEN }}
-          resource_id: "4836"
+          resource_id: "8381"
           upload_file: ${{ github.event.repository.name }}-windows-x64.zip
           update_description: ${{ needs.update-release-notes.outputs.release_notes }} # 使用 update-release-notes 步骤的输出
