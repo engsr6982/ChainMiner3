@@ -327,7 +327,8 @@ void miner2(int task_id, const BlockPos* start_pos) {
 
     // 在下一刻进行结果计算，否则手持物品无法更新
     mNextTickScheduler.add<ll::schedule::DelayTask>(1_tick, [&, task_id]() {
-        if (const auto [name, dimId, limit, cnt, cntD, tool, enchU, pl] = curTask; cnt > 0) {
+        const auto [name, dimId, limit, cnt, cntD, tool, enchU, pl] = curTask;
+        if (cnt > 0) {
             // 减少耐久
             ItemStack curTool = pl->getSelectedItem();
             const int dmg     = toolDamage(curTool, cntD);
@@ -335,37 +336,48 @@ void miner2(int task_id, const BlockPos* start_pos) {
             //  mi.pl->setItemSlot(mi.pl->getEquipmentSlotForItem(tool), tool);
             pl->setSelectedItem(curTool);
             pl->refreshInventory();
-            const string prefix  = config::ConfigManager::msg_prefix;
-            string       msg     = prefix;
-            msg                 += utils::s_replace(
-                config::config_j["msg"]["mine.success"],
-                "%Count%",
-                std::to_string(cnt)
-            ); // 有一个是自己挖的
-            if (config::config_j["switch"]["mine.damage"]) {
-                msg += (msg.length() > prefix.length() ? " " : "")
-                     + utils::s_replace(config::config_j["msg"]["mine.damage"], "%Damage%", std::to_string(dmg));
-            }
-            if (economic::economic.mode > 0) {
-                if (const long long cost = config::block_list[name].cost * (cnt - 1); cost > 0) {
-                    economic::economic.reduceMoney(pl, cost);
-                    msg += (msg.length() > prefix.length() ? " " : "") + config::config_j["msg"]["money.use"];
-                    msg  = utils::s_replace(msg, "%Cost%", std::to_string(cost));
-                    msg  = utils::s_replace(msg, "%Remain%", std::to_string(economic::economic.getMoney(pl)));
-                    msg  = utils::s_replace(msg, "%Name%", config::config_j["money.name"]);
+
+
+            // 构建提示信息
+            // 开启了成功提示 且 采集多个方块时发送提示
+            if (config::config_j["switch"]["mine.success"] && cnt >= 1) {
+                string message = config::ConfigManager::msg_prefix; // 前缀
+                message +=
+                    utils::s_replace(config::config_j["msg"]["mine.success"], "%Count%", std::to_string(cnt)); // 数量
+
+                // 有一个是自己挖的
+                if (config::config_j["switch"]["mine.damage"]) {
+                    message += " ";
+                    message += utils::s_replace(
+                        config::config_j["msg"]["mine.damage"],
+                        "%Damage%",
+                        std::to_string(dmg)
+                    ); // 耐久
                 }
-            }
-            if (curTool.hasDamageValue() && (curTool.getMaxDamage() - curTool.getDamageValue()) <= 2) {
-                msg += (msg.length() > prefix.length() ? '\n' + prefix : "");
-                msg += utils::s_replace(
-                    config::config_j["msg"]["mine.damage.warning"],
-                    "%Damage%",
-                    std::to_string(curTool.getMaxDamage() - curTool.getDamageValue())
-                );
-            }
-            // 开启了成功提示且采集多个方块时发送提示
-            if (config::config_j["switch"]["mine.success"] && cnt > 1) {
-                pl->sendMessage(msg);
+
+                if (economic::economic.mode > 0) {
+                    const long long cost = config::block_list[name].cost * (cnt - 1);
+                    if (cost > 0) {
+                        economic::economic.reduceMoney(pl, cost); // 扣除经济
+                        message += " ";
+                        message += config::config_j["msg"]["money.use"];
+                        // 替换变量文本
+                        message = utils::s_replace(message, "%Cost%", std::to_string(cost));
+                        message =
+                            utils::s_replace(message, "%Remain%", std::to_string(economic::economic.getMoney(pl)));
+                        message = utils::s_replace(message, "%Name%", config::config_j["money.name"]);
+                    }
+                }
+
+                if (curTool.hasDamageValue() && (curTool.getMaxDamage() - curTool.getDamageValue()) <= 2) {
+                    message += "\n";
+                    message += utils::s_replace(
+                        config::config_j["msg"]["mine.damage.warning"],
+                        "%Damage%",
+                        std::to_string(curTool.getMaxDamage() - curTool.getDamageValue())
+                    );
+                }
+                pl->sendMessage(message);
             }
         }
 

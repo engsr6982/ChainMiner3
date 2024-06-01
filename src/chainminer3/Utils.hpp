@@ -29,8 +29,8 @@ inline bool v_contains(std::vector<T>& v, const T f) {
 
 template <typename T>
 inline int v_remove(std::vector<T>& v, const T f) {
-    int  count = 0;
-    auto it    = v.begin();
+    // int  count = 0;
+    auto it = v.begin();
     while (it != v.end()) {
         if (*it == f) {
             it = v.erase(it);

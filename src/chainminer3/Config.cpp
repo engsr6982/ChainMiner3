@@ -9,7 +9,7 @@ using json = nlohmann::json;
 namespace chainminer3::config {
 
 
-#define CONFIG_FILE "plugins/ChainMiner/config.json"
+#define CONFIG_FILE "plugins/ChainMiner3/config.json"
 #define logger      my_plugin::MyPlugin::getInstance().getSelf().getLogger()
 
 nlohmann::json                        config_j;
@@ -24,7 +24,7 @@ double ConfigManager::multiply_damage_max    = 1;
 string ConfigManager::msg_prefix             = "";
 
 void initConfig() {
-    if (!std::filesystem::exists("plugins/ChainMiner/")) std::filesystem::create_directories("plugins/ChainMiner/");
+    if (!std::filesystem::exists("plugins/ChainMiner3/")) std::filesystem::create_directories("plugins/ChainMiner3/");
     if (std::filesystem::exists(CONFIG_FILE) && !std::filesystem::is_empty(CONFIG_FILE)) {
         try {
             logger.info("载入配置...");
@@ -139,15 +139,15 @@ void updateConfig() {
     json_new.merge_patch(config_j); // 将已有配置合并到默认配置，避免被覆盖
     if (config_j["version"] < 20) {
         // 复制旧版配置文件
-        std::filesystem::path original_path    = "plugins/ChainMiner/config.json";
-        std::filesystem::path destination_path = "plugins/ChainMiner/config.json.v19";
+        std::filesystem::path original_path    = "plugins/ChainMiner3/config.json";
+        std::filesystem::path destination_path = "plugins/ChainMiner3/config.json.v19";
         try {
             std::filesystem::copy_file(
                 original_path,
                 destination_path,
                 std::filesystem::copy_options::overwrite_existing
             );
-            logger.info("备份旧版配置文件至 plugins/ChainMiner/config.json.v19");
+            logger.info("备份旧版配置文件至 plugins/ChainMiner3/config.json.v19");
         } catch (const std::filesystem::filesystem_error& e) {
             std::cout << "Error copying file: " << e.what() << std::endl;
             logger.warn("备份旧版配置文件失败");
@@ -209,22 +209,30 @@ void writeDefaultConfig() {
     }
 
 json getDefaultConfig() {
+    // clang-format off
+    // 此处过长，格式化后不易阅读
     json j = {
         {"version",               CURRENT_CONFIG_VERSION                                                                              }, //  版本
         {"command",               "hcm"                                                                                               }, //  指令
-        {"command注释",         "插件的指令名,允许文本,reload无法重载该项"                                          },
-        {"money",                 "llmoney"                                                                                           }, //  是否使用money
-        {"money.name",            "金币"                                                                                            },
-        {"money.sbname",          "money"                                                                                             },
-        {"money注释",           "money: llmoney 或 scoreboard, money.sbname: 记分项名"                                         },
-        {"menu.count_per_page",   -1                                                                                                  },
-        {"default_detect_method", "block"                                                                                             },
+        {"command注释",            "插件的指令名,允许文本,reload无法重载该项"},
+        {"money",                 "llmoney"}, //  是否使用money
+        {"money.name",            "金币"},
+        {"money.sbname",          "money"},
+        {"money注释",             "money: llmoney 或 scoreboard, money.sbname: 记分项名"},
+        {"menu.count_per_page",   -1},
+        {"default_detect_method", "block"},
+
+        // 自定义开关
         {"switch",
-         {{"default", true},
-          {"chain_while_sneaking_only", false},
-          {"mine.success", true},
-          {"mine.damage", true},
-          {"switch.default注释", "玩家没有进行设置时的默认开关,允许布尔true/false"}}                              },
+             {
+                    {"default", true},
+                    {"chain_while_sneaking_only", false},
+                    {"mine.success", true},
+                    {"mine.damage", true},
+                    {"switch.default注释", "玩家没有进行设置时的默认开关,允许布尔true/false"}
+                 }
+            },
+
         {"multiply_damage",       json::array({1, 1})                                                                                 },
         {"op",                    json::array({})                                                                                     },
         {"blocks注释1",         "允许连锁采集的方块对应的命名空间ID,可按照样例自由添加."                   },
@@ -352,6 +360,7 @@ json getDefaultConfig() {
          }                                                                                                                            },
         {"msg.prefix",            "§4C§ch§6ai§gn§eMi§an§be§9r§r §f>>§r "                                                   }
     };
+    // clang-format on
     return j;
 }
 } // namespace chainminer3::config

@@ -9,7 +9,7 @@ namespace chainminer3::playersetting {
 
 
 #define logger              my_plugin::MyPlugin::getInstance().getSelf().getLogger()
-#define PLAYER_SETTING_FILE "plugins/ChainMiner/player.json"
+#define PLAYER_SETTING_FILE "plugins/ChainMiner3/player.json"
 
 
 void PlayerSetting::save_player_setting() {
@@ -110,8 +110,8 @@ void PlayerSetting::turnOn(const xuid_t& xuid, const string& nsid) { // 开启�
 
 
 void PlayerSetting::load() {
-    if (!std::filesystem::exists("plugins/ChainMiner/")) {
-        std::filesystem::create_directory("plugins/ChainMiner/");
+    if (!std::filesystem::exists("plugins/ChainMiner3/")) {
+        std::filesystem::create_directory("plugins/ChainMiner3/");
     } else {
         create_empty_file(); // 不存在或为空才创建
         read_player_setting();
