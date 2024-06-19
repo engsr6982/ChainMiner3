@@ -27,7 +27,7 @@ target("ChainMiner3") -- Change this to your plugin name.
         "/w44738",
         "/w45204"
     )
-    add_defines("NOMINMAX", "UNICODE","HAS_CXX23=1")
+    add_defines("NOMINMAX", "UNICODE","_HAS_CXX23=1")
     add_files("src/**.cpp")
     add_includedirs("src", "third-party/tessil")
     add_packages(
