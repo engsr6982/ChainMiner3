@@ -32,6 +32,8 @@ jobs:
           restore-keys: |
             xmake-
 
+      - uses: microsoft/setup-msbuild@v2
+
       - run: |
           xmake repo -u
 
