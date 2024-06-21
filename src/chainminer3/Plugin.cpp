@@ -93,7 +93,7 @@ void addSchedulderTask(ll::event::PlayerDestroyBlockEvent& e, const Block* block
             // logger.info("{}", toolType);
             const auto& material = block->getMaterial();
 
-            // 判断是否含有精准采集bl->getName();
+            // 判断是否含有精准采集bl->getTypeName();
             auto nbt = tool->save();
             // logger.debug("{}", nbt->toSNBT());
             const bool hasSilkTouch = getEnchantLevel(nbt, 16);
@@ -282,8 +282,8 @@ void miner2(int task_id, const BlockPos* start_pos) {
                                    ->getBlockSourceFromMainChunkSource()
                                    .getBlock(newpos);
             if (const auto r = config::block_list.find(curTask.blockName);
-                (bl->getName().getString() == curTask.blockName
-                 || utils::v_contains(r->second.similar, bl->getName().getString()))
+                (bl->getTypeName().getString() == curTask.blockName
+                 || utils::v_contains(r->second.similar, bl->getTypeName().getString()))
                 && !undamagableBlocks.contains(fmt::format("{}.{}.{}.{}", curpos.x, curpos.y, curpos.z, curTask.dimId)
                 )) {
                 block_q.push(newpos);
