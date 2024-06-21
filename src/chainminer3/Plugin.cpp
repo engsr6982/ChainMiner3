@@ -1,4 +1,4 @@
-﻿#include "Plugin.h"
+#include "Plugin.h"
 #include "Config.h"
 #include "Economic.h"
 #include "PlayerSetting.h"
@@ -282,8 +282,8 @@ void miner2(int task_id, const BlockPos* start_pos) {
                                    ->getBlockSourceFromMainChunkSource()
                                    .getBlock(newpos);
             if (const auto r = config::block_list.find(curTask.blockName);
-                (bl->getTypeName().getString() == curTask.blockName
-                 || utils::v_contains(r->second.similar, bl->getTypeName().getString()))
+                (bl->getTypeName() == curTask.blockName
+                 || utils::v_contains(r->second.similar, bl->getTypeName()))
                 && !undamagableBlocks.contains(fmt::format("{}.{}.{}.{}", curpos.x, curpos.y, curpos.z, curTask.dimId)
                 )) {
                 block_q.push(newpos);
@@ -295,7 +295,7 @@ void miner2(int task_id, const BlockPos* start_pos) {
                                    ->getOrCreateDimension(curTask.dimId)
                                    ->getBlockSourceFromMainChunkSource()
                                    .getBlock(curpos);
-            bl->getTypeName() != "minecraft:air") {
+            !bl->isAir()) {
             // 破坏方块
             // 主动call玩家破坏事件，当事件被拦截时结束连锁（某个方块进入了领地等）
             auto   ev = ll::event::player::PlayerDestroyBlockEvent{*curTask.player, curpos};
