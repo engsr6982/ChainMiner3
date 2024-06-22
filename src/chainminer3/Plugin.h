@@ -24,9 +24,9 @@ namespace chainminer3::plugin {
 void registerEventListener();
 void removeEventListener();
 
-void addSchedulderTask(ll::event::PlayerDestroyBlockEvent& e, const Block* block);
+void addSchedulderTask(Player* player, Block const* block, BlockPos const blockPos);
 
-void miner2(int task_id, const BlockPos* start_pos);
+void miner2(int task_id, const BlockPos start_pos);
 
 
 // tools functions

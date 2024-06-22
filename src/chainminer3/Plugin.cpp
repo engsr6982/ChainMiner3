@@ -45,12 +45,13 @@ void registerEventListener() {
                     return true;
                 }
 
-                // 在当前刻获取方块实例，如果在下一刻获取，方块会被Minecraft处理掉
-                Block const* block = &e.self().getDimension().getBlockSourceFromMainChunkSource().getBlock(e.pos());
-
                 if (e.isCancelled()) return true; // 事件被拦截
 
-                addSchedulderTask(e, block);
+                addSchedulderTask(
+                    &e.self(),
+                    &e.self().getDimension().getBlockSourceFromMainChunkSource().getBlock(e.pos()),
+                    BlockPos(e.pos()) // 拷贝，避免生命周期导致异常
+                );
                 return true;
             }
         );
@@ -60,32 +61,36 @@ void registerEventListener() {
 void removeEventListener() { ll::event::EventBus::getInstance().removeListener(mPlayerDestroyBlockEventListener); }
 
 
-void addSchedulderTask(ll::event::PlayerDestroyBlockEvent& ev, Block const* block) {
-    mNextTickScheduler.add<ll::schedule::DelayTask>(1_tick, [ev, block]() {
-        BlockPos const& blockPos  = ev.pos();
-        string const    blockName = block->getTypeName();
-        Player&         player    = ev.self();
+void addSchedulderTask(Player* player, Block const* block, BlockPos const blockPos) {
+    mNextTickScheduler.add<ll::schedule::DelayTask>(1_tick, [player, block, blockPos]() {
+        string const blockTypeName = block->getTypeName();
+        auto&        playerSetting = playersetting::playerSetting;
 
         // 获取同位置的方块新实例, 检测方块是否已掉落, 未掉落(被领地拦截等)则不进行连锁
-        if (!player.getDimension().getBlockSourceFromMainChunkSource().getBlock(ev.pos()).isAir()) return true;
+        if (!player->getDimension().getBlockSourceFromMainChunkSource().getBlock(blockPos).isAir()) return true;
         // 仅在生存模式下可连锁
-        if (player.getPlayerGameType() != GameType::Survival) return true;
+        if (player->getPlayerGameType() != GameType::Survival) return true;
         // 仅当玩家连锁开关打开时可连锁 (默认开启)
-        if (!playersetting::playerSetting.getSwitch(player.getXuid())) return true;
+        if (!playerSetting.getSwitch(player->getXuid())) return true;
         // 开启潜行连锁 (默认关闭) 后，仅当玩家潜行时可连锁
-        if (playersetting::playerSetting.getSwitch(player.getXuid(), "chain_while_sneaking_only")
-            && !player.isSneaking())
+        if (playerSetting.getSwitch(player->getXuid(), "chain_while_sneaking_only") && !player->isSneaking())
             return true;
 
+
         // 检测方块是否在设置的方块列表中
-        auto const iter = config::block_list.find(blockName);
+        auto const iter = config::block_list.find(blockTypeName);
+#ifdef DEBUG
+        std::cout << fmt::format("TypeName: {}, iter: {}", blockTypeName, iter != config::block_list.end())
+                  << std::endl;
+#endif
+
         if (iter != config::block_list.end()) {
             // 仅在方块连锁启用时可连锁 (默认启用)
             if (!iter->second.enabled) return true;
             // 仅在玩家的相应方块开关开启时可连锁 (默认开启)
-            if (!playersetting::playerSetting.getSwitch(player.getXuid(), blockName)) return true;
+            if (!playerSetting.getSwitch(player->getXuid(), blockTypeName)) return true;
 
-            auto*        tool     = const_cast<ItemStack*>(&player.getSelectedItem());
+            auto*        tool     = const_cast<ItemStack*>(&player->getSelectedItem());
             string const toolType = tool->getTypeName();
             auto const&  material = block->getMaterial();
 
@@ -102,36 +107,43 @@ void addSchedulderTask(ll::event::PlayerDestroyBlockEvent& ev, Block const* bloc
                 && (material.isAlwaysDestroyable() || tool->canDestroySpecial(*block)) // 可挖掘
                 && ((iter->second.enchSilkTouch == 1 && hasSilkTouch)                  // 仅精准采集工具
                     || (iter->second.enchSilkTouch == 0 && !hasSilkTouch)              // 禁止精准采集工具
-                    || iter->second.enchSilkTouch == 2)                                // 不论是否精准采集
-                ;
+                    || iter->second.enchSilkTouch == 2);                               // 不论是否精准采集
+
+#ifdef DEBUG
+            std::cout << "canThisToolChain: " << canThisToolChain << std::endl;
+#endif
             if (!canThisToolChain) return true;
 
             // logger.debug("{} is chainable using {}", bn, tool->getTypeName());
-            int limit = config::block_list[blockName].limit; // 最大挖掘数量
+            int maxLimit = config::block_list[blockTypeName].limit; // 最大挖掘数量
             if (tool->isDamageableItem()) {
-                limit = std::min(
-                    limit,
+                maxLimit = std::min(
+                    maxLimit,
                     static_cast<int>(
-                        (tool->getMaxDamage() - getDamageFromNbt(nbt) - 1)
+                        (tool->getMaxDamage() - tool->getDamageValue() - 1) // 留一点耐久,防止炸掉
                         / (config::ConfigManager::multiply_damage_switch ? config::ConfigManager::multiply_damage_max
                                                                          : 1)
                     )
-                ); // 留一点耐久,防止炸掉
+                );
             }
-            if (economic::economic.mode > 0 && config::block_list[blockName].cost > 0)
-                limit = std::min(
-                    limit,
-                    static_cast<int>(economic::economic.getMoney(&player) / config::block_list[blockName].cost)
+            if (economic::economic.mode > 0 && config::block_list[blockTypeName].cost > 0)
+                maxLimit = std::min(
+                    maxLimit,
+                    static_cast<int>(economic::economic.getMoney(player) / config::block_list[blockTypeName].cost)
                 );
 
-            // 仅当多个时
-            if (limit > 1) {
+#ifdef DEBUG
+            std::cout << "maxLimit: " << maxLimit << std::endl;
+#endif
+
+            // 仅在挖掘数量大于1时才进行连锁
+            if (maxLimit > 1) {
                 const int taskID = static_cast<int>(task_list.size()) + 1;
                 task_list.insert(std::pair<int, MinerInfo>{
                     taskID,
-                    {blockName, player.getDimensionId().id, limit, 0, 0, tool, getEnchantLevel(nbt, 17), &ev.self()}
+                    {blockTypeName, player->getDimensionId().id, maxLimit, 0, 0, tool, getEnchantLevel(nbt, 17), player}
                 });
-                miner2(taskID, &blockPos);
+                miner2(taskID, BlockPos(blockPos)); // 拷贝 BlockPos，防止被销毁导致异常
             }
         }
         return true;
@@ -140,9 +152,9 @@ void addSchedulderTask(ll::event::PlayerDestroyBlockEvent& ev, Block const* bloc
 
 
 // 使用队列进行连锁采集
-void miner2(int taskID, const BlockPos* startBlockPos) {
-    std::queue<BlockPos> block_q;
-    block_q.push(*startBlockPos);
+void miner2(int taskID, BlockPos const startBlockPos) {
+    std::queue<BlockPos> block_q; // 方块队列
+    block_q.push(startBlockPos);
     // 与方块相邻的六个方块
     static std::vector<tuple<int, int, int>> dirs1 = {
         {1,  0,  0 },
@@ -192,46 +204,83 @@ void miner2(int taskID, const BlockPos* startBlockPos) {
     }
 
     // 记录不可挖掘的方块
+
+    BlockSource* bs;             // 方块源
+    if (!curTask.player) return; // nullptr
+    if (curTask.dimId == curTask.player->getDimensionId().id) {
+        bs = &curTask.player->getDimension().getBlockSourceFromMainChunkSource();
+    } else {
+        auto const dimension = ll::service::getLevel()->getDimension(curTask.dimId);
+        if (!dimension) return; // 获取维度失败
+        bs = &dimension->getBlockSourceFromMainChunkSource();
+    }
+
     std::unordered_set<std::string> undamagableBlocks;
+
+#ifdef DEBUG
+    std::cout << fmt::format("block_q size: {}", block_q.size()) << std::endl;
+#endif
     while (curTask.count < curTask.limit && !block_q.empty()) {
-        BlockPos curpos = block_q.front();
+        BlockPos curpos = block_q.front(); // 取出队首方块(==startBlockPos)
+
+        // 遍历相邻方块（每处理一个方块，搜索其相邻方块）
         for (auto& dir : dirs) {
-            auto         newpos = BlockPos(curpos.x + get<0>(dir), curpos.y + get<1>(dir), curpos.z + get<2>(dir));
-            const Block* bl     = &ll::service::getLevel()
-                                   ->getOrCreateDimension(curTask.dimId)
-                                   ->getBlockSourceFromMainChunkSource()
-                                   .getBlock(newpos);
+            BlockPos     newpos = BlockPos(curpos.x + get<0>(dir), curpos.y + get<1>(dir), curpos.z + get<2>(dir));
+            string const blockTypeName = bs->getBlock(newpos).getTypeName();
 
             const auto iter = config::block_list.find(curTask.blockName);
-            if ((bl->getTypeName() == curTask.blockName || utils::v_contains(iter->second.similar, bl->getTypeName()))
+
+#ifdef DEBUG
+            std::cout << fmt::format(
+                // clang-format off
+                "curposs: {7}  |  newpos: {0}  |  blockTypeName: {1}  |  curTask.blockName: {2}\niter: {3}  |  iter->second.similar: {4}\nv_contains: {5}\nundamagableBlocks.contanins: {6}",
+                // clang-format on
+                newpos.toString(),                                                                                 // 0
+                blockTypeName,                                                                                     // 1
+                curTask.blockName,                                                                                 // 2
+                iter != config::block_list.end(),                                                                  // 3
+                iter != config::block_list.end() ? std::to_string(iter->second.similar.size()) : "iter not found", // 4
+                iter != config::block_list.end()
+                    ? std::to_string(utils::v_contains(iter->second.similar, blockTypeName))
+                    : "iter not found", // 5
+                undamagableBlocks.contains(fmt::format("{}.{}.{}.{}", curpos.x, curpos.y, curpos.z, curTask.dimId)
+                ),                // 6
+                curpos.toString() // 7
+            ) << std::endl
+                      << std::endl;
+#endif
+
+            if ((blockTypeName == curTask.blockName || utils::v_contains(iter->second.similar, blockTypeName))
                 && !undamagableBlocks.contains(fmt::format("{}.{}.{}.{}", curpos.x, curpos.y, curpos.z, curTask.dimId)
                 )) {
-                block_q.push(newpos);
+                block_q.push(newpos); // 加入队列
+
+#ifdef DEBUG
+                std::cout << fmt::format("Add Block: {}, Pos: {}", blockTypeName, newpos.toString()) << std::endl
+                          << std::endl;
+#endif
             }
         }
 
         // if (const Block* bl = Level::getBlock(curpos, curTask.dimId); bl->getId() != 0) {
-        if (const Block* bl = &ll::service::getLevel()
-                                   ->getOrCreateDimension(curTask.dimId)
-                                   ->getBlockSourceFromMainChunkSource()
-                                   .getBlock(curpos);
-            !bl->isAir()) {
+        const Block* bl = &bs->getBlock(curpos);
+        if (!bl->isAir()) {
             // 破坏方块
             // 主动call玩家破坏事件，当事件被拦截时结束连锁（某个方块进入了领地等）
-            auto   ev = ll::event::player::PlayerDestroyBlockEvent{*curTask.player, curpos};
-            string dp = getBlockDimAndPos(ev);
+            auto         ev = ll::event::player::PlayerDestroyBlockEvent{*curTask.player, curpos};
+            string const dp = getBlockDimAndPos(ev);
+
             chaining_blocks.insert(dp);
             ll::event::EventBus::getInstance().publish(ev);
             chaining_blocks.erase(dp);
+
             if (ev.isCancelled()) {
                 // 将方块标记为不可挖掘
                 undamagableBlocks.insert(fmt::format("{}.{}.{}.{}", curpos.x, curpos.y, curpos.z, curTask.dimId));
             } else {
                 bl->playerDestroy(*curTask.player, curpos); // playerDestroy仅生成掉落物
-                ll::service::getLevel()
-                    ->getOrCreateDimension(curTask.dimId)
-                    ->getBlockSourceFromMainChunkSource()
-                    .removeBlock(curpos); // 移除方块
+                bs->removeBlock(curpos);                    // 移除方块
+
 
                 // 累计耐久损失
                 // 1.当工具未附魔耐久时+1
@@ -242,7 +291,7 @@ void miner2(int taskID, const BlockPos* startBlockPos) {
                 curTask.count++;
             }
         }
-        block_q.pop();
+        block_q.pop(); // 弹出队首方块
     }
 
     // 在下一刻进行结果计算，否则手持物品无法更新
