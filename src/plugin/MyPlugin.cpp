@@ -33,7 +33,7 @@ bool MyPlugin::enable() {
     // Code for enabling the plugin goes here.
 
     chainminer3::command::registerCommand();
-    chainminer3::plugin::registerEvent();
+    chainminer3::plugin::registerEventListener();
 
     return true;
 }
@@ -42,7 +42,7 @@ bool MyPlugin::disable() {
     getSelf().getLogger().info("Disabling...");
     // Code for disabling the plugin goes here.
 
-    chainminer3::plugin::removeListener();
+    chainminer3::plugin::removeEventListener();
 
     return true;
 }
