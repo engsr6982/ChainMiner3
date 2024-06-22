@@ -14,8 +14,8 @@
     },
     "asset_url": "https://github.com/engsr6982/ChainMiner3/releases/download/v0.3.1/ChainMiner3-windows-x64.zip",
     "prerequisites": {
-        "github.com/LiteLDev/LeviLamina": "0.12.x",
-        "github.com/LiteLDev/LegacyMoney": "0.7.x"
+        "github.com/LiteLDev/LeviLamina": "0.13.x",
+        "github.com/LiteLDev/LegacyMoney": "0.8.x"
     },
     "files": {
         "place": [
