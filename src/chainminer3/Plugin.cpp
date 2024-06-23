@@ -96,12 +96,11 @@ void addSchedulderTask(Player* player, Block const* block, BlockPos const blockP
             if (!playerSetting.getSwitch(player->getXuid(), blockTypeName)) return true;
 
             auto*        tool     = const_cast<ItemStack*>(&player->getSelectedItem()); // 去 const，取指针
-            auto*        toolBase = dynamic_cast<ItemStackBase*>(tool);                 // 转基类
             string const toolType = tool->getTypeName();
             auto const&  material = block->getMaterial();
 
             // 判断是否含有精准采集附魔
-            bool const hasSilkTouch = EnchantUtils::hasEnchant(::Enchant::Type::MiningSilkTouch, *toolBase);
+            bool const hasSilkTouch = EnchantUtils::hasEnchant(::Enchant::Type::MiningSilkTouch, *tool);
 
             // 如果该工具无法挖掘就结束
             const bool canThisToolChain =
@@ -150,7 +149,7 @@ void addSchedulderTask(Player* player, Block const* block, BlockPos const blockP
                       player->getDimensionId().id,
                       maxLimit, 0,
                       0, tool,
-                      EnchantUtils::getEnchantLevel(::Enchant::Type::MiningDurability, *toolBase), // 耐久附魔等级
+                      EnchantUtils::getEnchantLevel(::Enchant::Type::MiningDurability, *tool), // 耐久附魔等级
                      player}
                 });
                 miner2(taskID, BlockPos(blockPos)); // 拷贝 BlockPos，防止被销毁导致异常
