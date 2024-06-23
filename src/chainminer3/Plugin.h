@@ -34,10 +34,6 @@ int randomInt();
 
 std::string getBlockDimAndPos(ll::event::PlayerDestroyBlockEvent& e);
 
-short getEnchantLevel(const std::unique_ptr<CompoundTag>& nbt, short id);
-
-int getDamageFromNbt(const std::unique_ptr<CompoundTag>& nbt);
-
 int toolDamage(ItemStack& tool, int count);
 
 int countTaskList();

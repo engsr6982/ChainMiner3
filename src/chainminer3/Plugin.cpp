@@ -4,12 +4,16 @@
 #include "PlayerSetting.h"
 #include "Plugin.h"
 #include "Utils.hpp"
+#include "mc/world/item/ItemStackBase.h"
+#include "mc/world/item/enchanting/Enchant.h"
+#include "mc/world/item/enchanting/EnchantUtils.h"
 #include "plugin/MyPlugin.h"
 #include <queue>
 #include <random>
 #include <tuple>
 #include <unordered_map>
 #include <utility>
+
 
 using std::get;
 using std::tuple;
@@ -22,7 +26,7 @@ typedef struct minerinfo {
     int        count{};       // 已挖掘数量
     int        countDamage{}; // 需要扣除的耐久
     ItemStack* tool{};        // 工具
-    short      enchU{};       // 耐久附魔等级(没有为0)
+    int        enchU{};       // 耐久附魔等级(没有为0)
     Player*    player{};      // 玩家指针
 } MinerInfo;
 
@@ -79,6 +83,7 @@ void addSchedulderTask(Player* player, Block const* block, BlockPos const blockP
 
         // 检测方块是否在设置的方块列表中
         auto const iter = config::block_list.find(blockTypeName);
+
 #ifdef DEBUG
         std::cout << fmt::format("TypeName: {}, iter: {}", blockTypeName, iter != config::block_list.end())
                   << std::endl;
@@ -90,13 +95,13 @@ void addSchedulderTask(Player* player, Block const* block, BlockPos const blockP
             // 仅在玩家的相应方块开关开启时可连锁 (默认开启)
             if (!playerSetting.getSwitch(player->getXuid(), blockTypeName)) return true;
 
-            auto*        tool     = const_cast<ItemStack*>(&player->getSelectedItem());
+            auto*        tool     = const_cast<ItemStack*>(&player->getSelectedItem()); // 去 const，取指针
+            auto*        toolBase = dynamic_cast<ItemStackBase*>(tool);                 // 转基类
             string const toolType = tool->getTypeName();
             auto const&  material = block->getMaterial();
 
             // 判断是否含有精准采集附魔
-            auto       nbt          = tool->save();
-            bool const hasSilkTouch = getEnchantLevel(nbt, 16);
+            bool const hasSilkTouch = EnchantUtils::hasEnchant(::Enchant::Type::MiningSilkTouch, *toolBase);
 
             // 如果该工具无法挖掘就结束
             const bool canThisToolChain =
@@ -141,7 +146,12 @@ void addSchedulderTask(Player* player, Block const* block, BlockPos const blockP
                 const int taskID = static_cast<int>(task_list.size()) + 1;
                 task_list.insert(std::pair<int, MinerInfo>{
                     taskID,
-                    {blockTypeName, player->getDimensionId().id, maxLimit, 0, 0, tool, getEnchantLevel(nbt, 17), player}
+                    {blockTypeName,
+                      player->getDimensionId().id,
+                      maxLimit, 0,
+                      0, tool,
+                      EnchantUtils::getEnchantLevel(::Enchant::Type::MiningDurability, *toolBase), // 耐久附魔等级
+                     player}
                 });
                 miner2(taskID, BlockPos(blockPos)); // 拷贝 BlockPos，防止被销毁导致异常
             }
@@ -220,6 +230,7 @@ void miner2(int taskID, BlockPos const startBlockPos) {
 #ifdef DEBUG
     std::cout << fmt::format("block_q size: {}", block_q.size()) << std::endl;
 #endif
+
     while (curTask.count < curTask.limit && !block_q.empty()) {
         BlockPos curpos = block_q.front(); // 取出队首方块(==startBlockPos)
 
@@ -368,43 +379,6 @@ std::string getBlockDimAndPos(ll::event::PlayerDestroyBlockEvent& e) {
     return std::to_string(e.self().getDimensionId()) + ',' + e.pos().toString();
 }
 
-/**
- * @brief 获取附魔等级
- * @param nbt 工具nbt
- * @param id 附魔id
- * @return 等级(0表示不存在)
- */
-short getEnchantLevel(const std::unique_ptr<CompoundTag>& nbt, const short id) {
-    if (nbt->contains("tag")) {
-        const auto tag = nbt->getCompound("tag");
-        if (tag->contains(ItemStack::TAG_ENCHANTS)) {
-            const ListTag* ench = tag->getList(ItemStack::TAG_ENCHANTS);
-            short          val;
-            ench->forEachCompoundTag([&](CompoundTag const& tag) {
-                if (tag.getShort("id") == id) {
-                    val = tag.getShort("lvl");
-                }
-            });
-            return val;
-        }
-    }
-    return 0;
-}
-
-/**
- * @brief 获取工具的耐久值
- * @param nbt 工具nbt
- * @return 耐久值
- */
-int getDamageFromNbt(const std::unique_ptr<CompoundTag>& nbt) {
-    if (nbt->contains("tag")) {
-        // 必须判断否则会报错
-        if (const auto tag = nbt->getCompound("tag"); tag->contains("Damage")) {
-            return tag->getInt("Damage");
-        }
-    }
-    return 0;
-}
 
 int toolDamage(ItemStack& tool, const int count) {
     int        damage = count;
