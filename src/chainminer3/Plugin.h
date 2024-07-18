@@ -16,28 +16,29 @@
 #include "mc/world/level/block/actor/BlockActor.h"
 #include "mc/world/level/dimension/Dimension.h"
 #include "mc/world/level/material/Material.h"
+#include <functional>
 
 
 namespace chainminer3::plugin {
 
-// core functions
+// Event
 void registerEventListener();
 void removeEventListener();
 
-void addSchedulderTask(Player* player, Block const* block, BlockPos const blockPos);
 
+// Core
 void miner2(int task_id, const BlockPos start_pos);
 
 
-// tools functions
-int randomInt();
+// Tools
+int    randomInt();
+int    toolDamage(ItemStack& tool, int count);
+size_t hashPosAndDim(Vec3 const& v3, int& dim);
+size_t hashPosAndDim(ll::event::PlayerDestroyBlockEvent& e);
 
-std::string getBlockDimAndPos(ll::event::PlayerDestroyBlockEvent& e);
 
-int toolDamage(ItemStack& tool, int count);
-
+// Command
 int countTaskList();
-
 int countChainingBlocks();
 
 } // namespace chainminer3::plugin
