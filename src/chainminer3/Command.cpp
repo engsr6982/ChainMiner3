@@ -17,7 +17,6 @@
 #include <ll/api/command/Optional.h>
 #include <ll/api/command/Overload.h>
 #include <ll/api/i18n/I18n.h>
-#include <ll/api/plugin/NativePlugin.h>
 #include <ll/api/service/Bedrock.h>
 #include <ll/api/service/PlayerInfo.h>
 #include <ll/api/service/Service.h>

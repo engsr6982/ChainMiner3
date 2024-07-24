@@ -2,8 +2,7 @@
 
 #include <memory>
 
-#include "ll/api/plugin/NativePlugin.h"
-#include "ll/api/plugin/RegisterHelper.h"
+#include "ll/api/mod/RegisterHelper.h"
 
 // ChainMiner3
 #include "chainminer3/Command.h"
@@ -49,4 +48,4 @@ bool MyPlugin::disable() {
 
 } // namespace my_plugin
 
-LL_REGISTER_PLUGIN(my_plugin::MyPlugin, my_plugin::instance);
+LL_REGISTER_MOD(my_plugin::MyPlugin, my_plugin::instance);
