@@ -20,7 +20,7 @@ A plugin helps players gather blocks faster.
 > 很抱歉的通知您：  
 > 由于一些遗留问题以及性能原因，此插件不在更新、适配新版本。   
 > 如果您有需要可以使用替代插件 [FastMiner](https://github.com/engsr6982/FastMiner)。  
-> FastMiner 性能比当前插件更好，在Cube模式下FastMiner可以在1.3秒内完成2029个方块连锁。
+> FastMiner 性能比当前插件更好，能在 2.8秒 内完成 1w 方块连锁。
 
 ## 前置
 
